@@ -127,8 +127,7 @@ impl Connection {
             // Any EOF here will be a partial frame and thus an error
             let bytes_read = self.read().await?;
             if bytes_read == 0 {
-                unreachable!();
-                //return Ok(None);
+                return Err("data: connection reset by peer".into());
             }
 
             // Take the lesser of the bytes needed to complete the frame, or
@@ -159,9 +158,16 @@ impl Connection {
                 self.cursor += i + 1;
                 return Ok(Some((cmd, len)));
             }
+
             // Read until we have the whole preamble or the socket closes
             let n = self.read().await?;
             if n == 0 {
+                // If there's still data in the buffer (in the case of a partial
+                // preamble) and we get an EOF, signal an error
+                if !self.rx_buffer().is_empty() {
+                    return Err("preamble: connection reset by peer".into());
+                }
+                // Normal close
                 return Ok(None);
             }
         }
