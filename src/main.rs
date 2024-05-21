@@ -78,7 +78,7 @@ struct Connection {
 }
 
 impl Connection {
-    fn remaining_capacity(&self) -> usize {
+    fn remaining_rx_capacity(&self) -> usize {
         self.buffer.capacity() - self.cursor
     }
 
@@ -119,18 +119,13 @@ impl Connection {
 
         // While we don't have the whole frame in rx_buffer, keep reading
         while frame.is_partial() {
-            // If rx_buffer is full, clear it and the cursor
-            if self.remaining_capacity() == 0 {
-                self.reset_cursor()
-            }
-
             // Any EOF here will be a partial frame and thus an error
             let bytes_read = self.read().await?;
             if bytes_read == 0 {
                 return Err("data: connection reset by peer".into());
             }
 
-            // Take the lesser of the bytes needed to complete the frame, or
+            // Take the lesser of the bytes required to complete the frame or
             // `bytes_read`. This ensures we copy as much as possible without overflowing
             // the frame
             let bytes_needed = len - frame.data.len();
@@ -173,16 +168,20 @@ impl Connection {
         }
     }
 
-    // Read from the socket and write to `self.buffer`. XXX read()
+    // Read from the socket and write to `self.buffer`.
     async fn read(&mut self) -> Result<usize> {
+        // All of this data has been copied so reset the buffer and cursor. Also prevents
+        // `read_buf()` from managing its own capacity by never reading when full (it's
+        // hardcoded to grow by 64 bytes at a time...)
+        if self.remaining_rx_capacity() == 0 {
+            self.reset_cursor()
+        }
+
+        // `read_buf()` stores its own interal cursor and manages the buffer length (not cap)
         let n = self.socket.read_buf(&mut self.buffer).await?;
         println!("read {}", n);
+        println!("{}", self.buffer.capacity());
         println!("{:?}", String::from_utf8(self.buffer.clone()).unwrap());
-
-        // XXX this doesn't work yet
-        if n == 0 && !self.rx_buffer().is_empty() {
-            return Err("connection reset by peer".into());
-        }
         Ok(n)
     }
 }
