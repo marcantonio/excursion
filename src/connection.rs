@@ -4,6 +4,8 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::frame::{Command, Frame};
 
+const READ_BUF_CAP: usize = 4096;
+
 pub struct Connection<SocketRx> {
     rx: SocketRx,
     buffer: Vec<u8>,
@@ -14,7 +16,7 @@ type Result<T> = crate::Result<T>;
 
 impl<SocketRx: AsyncRead + Unpin> Connection<SocketRx> {
     pub fn new(reader: SocketRx) -> Self {
-        Connection { rx: reader, buffer: Vec::with_capacity(4), cursor: 0 }
+        Connection { rx: reader, buffer: Vec::with_capacity(READ_BUF_CAP), cursor: 0 }
     }
 
     fn remaining_rx_capacity(&self) -> usize {
@@ -45,7 +47,6 @@ impl<SocketRx: AsyncRead + Unpin> Connection<SocketRx> {
         // Always take the min of the rx_buffer and the frame length. Don't make the frame
         // worry about this. The buffer will either truncate the frame (requiring another
         // read) or contain the whole frame
-        // XXX: What about a partial frame at the end of the buffer?
         let n = cmp::min(self.rx_buffer().len(), len);
         let mut frame = Frame::new(cmd, len, &self.rx_buffer()[..n]);
         self.cursor += n;
@@ -55,7 +56,7 @@ impl<SocketRx: AsyncRead + Unpin> Connection<SocketRx> {
             // Any EOF here will be a partial frame and thus an error
             let bytes_read = self.read().await?;
             if bytes_read == 0 {
-                return Err("data: connection reset by peer".into());
+                return Err("malformed data or connection reset by peer".into());
             }
 
             // Take the lesser of the bytes required to complete the frame or
@@ -93,7 +94,7 @@ impl<SocketRx: AsyncRead + Unpin> Connection<SocketRx> {
                 // If there's still data in the buffer (in the case of a partial
                 // preamble) and we get an EOF, signal an error
                 if !self.rx_buffer().is_empty() {
-                    return Err("preamble: connection reset by peer".into());
+                    return Err("malformed preamble or connection reset by peer".into());
                 }
                 // Normal close
                 return Ok(None);
@@ -110,30 +111,112 @@ impl<SocketRx: AsyncRead + Unpin> Connection<SocketRx> {
             self.reset_cursor()
         }
 
-        // `read_buf()` stores its own interal cursor and manages the buffer length (not cap)
+        // `read_buf()` stores its own internal cursor and manages the buffer length (not cap)
         let n = self.rx.read_buf(&mut self.buffer).await?;
-        println!("read {}", n);
-        println!("{}", self.buffer.capacity());
-        println!("{:?}", String::from_utf8(self.buffer.clone()).unwrap());
         Ok(n)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use tokio_test::io::Builder;
     use super::*;
+    use std::collections::HashMap;
+
+    use tokio_test::io::Builder;
+
+    impl<SocketRx: AsyncRead + Unpin> Connection<SocketRx> {
+        fn with_buffer_capacity(reader: SocketRx, capacity: usize) -> Self {
+            Connection { rx: reader, buffer: Vec::with_capacity(capacity), cursor: 0 }
+        }
+    }
 
     #[tokio::test]
-    async fn reader() {
-        let reader = Builder::new()
-            .read(b"&8|testdata")
-            .build();
-
+    async fn normal_frame() {
+        let reader = Builder::new().read(b"&8|testdata").build();
         let mut connection = Connection::new(reader);
         let frame = connection.read_frame().await.unwrap().unwrap();
-
         assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
-        assert!(!frame.is_partial());
+    }
+
+    #[tokio::test]
+    async fn bad_frames() {
+        let tests = HashMap::from([
+            ("8|testdata", "invalid command"),
+            ("^8|testdata", "invalid command"),
+            ("&a|testdata", "invalid frame size"),
+            ("&|testdata", "invalid frame size"),
+            ("&8testdata", "malformed preamble or connection reset by peer"),
+            ("&9|testdata", "malformed data or connection reset by peer"),
+        ]);
+
+        for (input, err) in tests {
+            let reader = Builder::new().read(input.as_bytes()).build();
+            let frame = Connection::new(reader).read_frame().await;
+            assert!(matches!(frame, Err(e) if e.to_string() == err), "{}", err.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn small_buffer() {
+        let reader = Builder::new().read(b"&8|testdata").build();
+        let mut connection = Connection::with_buffer_capacity(reader, 4);
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(connection.buffer.capacity() == 4, "didn't grow");
+    }
+
+    #[tokio::test]
+    async fn short_reads() {
+        let reader =
+            Builder::new().read(b"&8").read(b"|t").read(b"es").read(b"td").read(b"at").read(b"a").build();
+        let mut connection = Connection::new(reader);
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+    }
+
+    #[tokio::test]
+    async fn frame_plus_partial() {
+        let reader = Builder::new().read(b"&8|testdata&8|test").build();
+        let mut connection = Connection::new(reader);
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        let frame = connection.read_frame().await;
+        assert!(matches!(frame, Err(e) if e.to_string() == "malformed data or connection reset by peer"));
+    }
+
+    #[tokio::test]
+    async fn frame_plus_one() {
+        let reader = Builder::new().read(b"&8|testdata&8|testdata").build();
+        let mut connection = Connection::new(reader);
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+    }
+
+    #[tokio::test]
+    async fn frame_plus_one_short() {
+        let reader = Builder::new()
+            .read(b"&8")
+            .read(b"|t")
+            .read(b"es")
+            .read(b"td")
+            .read(b"at")
+            .read(b"a")
+            .read(b"&8")
+            .read(b"|t")
+            .read(b"es")
+            .read(b"td")
+            .read(b"at")
+            .read(b"a")
+            .read(b"&8")
+            .build();
+        let mut connection = Connection::with_buffer_capacity(reader, 4);
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        let frame = connection.read_frame().await.unwrap().unwrap();
+        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        let frame = connection.read_frame().await;
+        assert!(matches!(frame, Err(e) if e.to_string() == "malformed preamble or connection reset by peer"));
     }
 }
