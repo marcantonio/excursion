@@ -30,8 +30,8 @@ async fn main() {
 }
 
 async fn process_command(mut socket: TcpStream) -> Result<()> {
-    let (reader, _) = socket.split();
-    let mut connection = Connection::new(reader);
+    let (reader, writer) = socket.split();
+    let mut connection = Connection::new(reader, writer);
 
     while let Some(frame) = connection.read_frame().await? {
         println!("{}", frame);
