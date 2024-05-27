@@ -2,7 +2,7 @@ use std::cmp;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::frame::{Command, Frame};
+use crate::frame::{FrameType, Frame};
 
 const READ_BUF_CAP: usize = 4096;
 
@@ -74,7 +74,7 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
 
     // Get the command and the frame length from the buffer, reading if necessary. Must be
     // called only at the beginning of a frame
-    async fn get_preamble(&mut self) -> Result<Option<(Command, usize)>> {
+    async fn get_preamble(&mut self) -> Result<Option<(FrameType, usize)>> {
         loop {
             // Search for a `|` from the cursor on. If we get it, assume that the first
             // available byte is the command. If we don't get the char, read more.
@@ -118,8 +118,9 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
     }
 
     pub async fn write_frame(&mut self, frame: Frame) -> Result<()> {
+        use FrameType::*;
         match frame.command {
-            Command::Data => {
+            Data | Err => {
                 self.tx.write_u8(b'^').await?;
                 self.tx.write_all(format!("{}|", frame.data_len).as_bytes()).await?;
                 self.tx.write_all(&frame.data).await?;
@@ -152,7 +153,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
     }
 
     #[tokio::test]
@@ -180,7 +181,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
         assert!(connection.buffer.capacity() == 4, "didn't grow");
     }
 
@@ -191,7 +192,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
     }
 
     #[tokio::test]
@@ -200,7 +201,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed data or connection reset by peer"));
     }
@@ -211,9 +212,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
     }
 
     #[tokio::test]
@@ -236,9 +237,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(Command::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed preamble or connection reset by peer"));
     }
@@ -249,6 +250,6 @@ mod tests {
         let writer = Builder::new().write(b"^13|file contents").build();
         let mut connection = Connection::new(reader, writer);
         connection.read_frame().await.unwrap().unwrap();
-        connection.write_frame(Frame::new(Command::Data, 13, b"file contents")).await.unwrap();
+        connection.write_frame(Frame::new(FrameType::Data, 13, b"file contents")).await.unwrap();
     }
 }
