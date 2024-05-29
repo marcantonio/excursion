@@ -23,8 +23,9 @@
 
 (defun excursion-open-remote-file (filename)
   (interactive "GFilename: ")
-  (let ((request (format "(%s|%s" (length filename) filename)))
-    (excursion--remote-connection)
+  (let ((request (format "(%s|%s" (length filename) filename))
+        (process (excursion--remote-connection)))
+    (process-put process 'filename filename)
     (process-send-string excursion--process-name request)))
 
 (defun excursion--split-at-first (delimiter string)
@@ -46,22 +47,34 @@
             (len . ,len)
             (data . ,data)))))))
 
-(defun excursion-filter (process string)
+(defun excursion--filter (process contents)
   (when (buffer-live-p (process-buffer process))
-    (let ((frame (excursion--destructure-frame string)))
-      (message (cdr (assoc 'data frame))))))
+    (let* ((frame (excursion--destructure-frame contents))
+           (filename (process-get process 'filename))
+           (buffer (generate-new-buffer (file-name-nondirectory filename))))
+      (excursion--setup-buffer buffer filename (cdr (assoc 'data frame)))
+      (switch-to-buffer buffer))))
+
+(defun excursion--setup-buffer (buffer filename contents)
+  (with-current-buffer buffer
+    (setq buffer-file-name filename)
+    (setq default-directory (concat "/excursion:" (file-name-directory filename)))
+    (set-auto-mode)
+    (insert contents)
+    (set-buffer-modified-p nil)
+    (goto-char (point-min))))
 
 (defun excursion--remote-connection ()
-  (when (null (get-process excursion--process-name))
+  (if-let ((process (get-process excursion--process-name)))
+      process
     (condition-case err
-        (progn
-          (open-network-stream
-           excursion--process-name "*excursion*" excursion-host excursion-port)
-          (set-process-filter (get-process excursion--process-name) 'excursion-filter))
+        (let ((process (open-network-stream excursion--process-name "*excursion*" excursion-host excursion-port)))
+          (set-process-filter process 'excursion--filter)
+          process)
       (file-error
        (error "failed to open remote connection: %s" (error-message-string err))))))
 
 (progn
   (excursion-terminate)
-  ;; (excursion-open-remote-file "./scripts/nc_test.bash"))
-  (excursion-open-remote-file "./ss.txt"))
+  (excursion-open-remote-file "./scripts/nc_test.bash"))
+  ;; (excursion-open-remote-file "./ss.txt"))
