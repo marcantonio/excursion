@@ -119,9 +119,14 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
 
     pub async fn write_frame(&mut self, frame: Frame) -> Result<()> {
         use FrameType::*;
-        match frame.command {
-            Data | Err => {
+        match frame.ty {
+            Data => {
                 self.tx.write_u8(b'^').await?;
+                self.tx.write_all(format!("{}|", frame.data_len).as_bytes()).await?;
+                self.tx.write_all(&frame.data).await?;
+            },
+            Err => {
+                self.tx.write_u8(b'!').await?;
                 self.tx.write_all(format!("{}|", frame.data_len).as_bytes()).await?;
                 self.tx.write_all(&frame.data).await?;
             },
