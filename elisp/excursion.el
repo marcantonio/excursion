@@ -11,7 +11,7 @@
                                  (?&  . Save)))
 
 (defun excursion--get-frame-type (char)
-  "Use the `char` to lookup the frame type."
+  "Use the CHAR to lookup the frame type."
   (cdr (assoc char excursion--frame-types)))
 
 (defun excursion-terminate ()

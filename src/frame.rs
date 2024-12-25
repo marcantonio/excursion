@@ -2,14 +2,14 @@ use std::fmt::Display;
 
 #[derive(Debug, PartialEq)]
 pub struct Frame {
-    pub command: FrameType,
+    pub ty: FrameType,
     pub data_len: usize,
     pub data: Vec<u8>,
 }
 
 impl Frame {
-    pub fn new(command: FrameType, length: usize, src_data: &[u8]) -> Self {
-        let mut frame = Frame { command, data_len: length, data: Vec::with_capacity(length) };
+    pub fn new(ty: FrameType, length: usize, src_data: &[u8]) -> Self {
+        let mut frame = Frame { ty, data_len: length, data: Vec::with_capacity(length) };
         frame.copy_from(src_data);
         frame
     }
@@ -29,14 +29,16 @@ impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let sub = self.data.iter().cloned().take(8).collect::<Vec<_>>();
         let data_str = String::from_utf8_lossy(&sub).replace('\n', "\\n");
-        write!(f, "<{}, {}, {}...>", self.command, self.data_len, data_str)
+        write!(f, "<{}, {}, {}...>", self.ty, self.data_len, data_str)
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum FrameType {
     Data,
+    DirList,
     Err,
+    FileExists,
     Open,
     Save,
 }
@@ -48,6 +50,8 @@ impl TryFrom<u8> for FrameType {
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
             b'^' => Ok(Self::Data),
+            b'~' => Ok(Self::DirList),
+            b'?' => Ok(Self::FileExists),
             b'(' => Ok(Self::Open),
             b'&' => Ok(Self::Save),
             _ => Err("invalid command"),
