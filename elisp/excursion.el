@@ -24,7 +24,7 @@
         (delete-process process)))))
 
 (defun excursion-open-remote-file (filename)
-  "Open `filename` remotely. Will create a new connection if
+  "Open FILENAME remotely. Will create a new connection if
 necessary."
   (interactive "GFilename: ")
   ;; Concatentate filename length and the filename
@@ -35,7 +35,7 @@ necessary."
     (process-send-string excursion--process-name request)))
 
 (defun excursion--split-at-first (delimiter string)
-  "Split `string` at the first occurrence of `delimiter` and return
+  "Split STRING at the first occurrence of DELIMITER and return
 both."
   (let ((pos (string-match (regexp-quote delimiter) string)))
     (when pos
@@ -43,7 +43,7 @@ both."
             (substring string (+ pos (length delimiter)))))))
 
 (defun excursion--destructure-frame (frame)
-  "Validate the frame and return it as an alist."
+  "Validate FRAME and return it as an alist."
   (let* ((frame-halves (excursion--split-at-first "|" frame))
          (preamble (car frame-halves))
          (data (cadr frame-halves)))
@@ -69,7 +69,7 @@ both."
       (switch-to-buffer buffer))))
 
 (defun excursion--setup-buffer (buffer filename contents)
-  "Set up `buffer` for `filename` and inject `contents`."
+  "Set up BUFFER for FILENAME and inject CONTENTS."
   (with-current-buffer buffer
     (setq buffer-file-name filename)
     (setq default-directory (concat "/excursion:" (file-name-directory filename)))
