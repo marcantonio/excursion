@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use path_absolutize::Absolutize;
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -55,6 +56,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
         let frame_data = String::from_utf8_lossy(&frame.data);
         match frame.ty {
             DirList => handle_dir_list(&mut connection, &frame_data).await?,
+            ExpandFileName => handle_expand_file_name(&mut connection, &frame_data).await?,
             FileExists => handle_file_exists(&mut connection, &frame_data).await?,
             Open => handle_open(&mut connection, &frame_data).await?,
             Save => todo!(),
@@ -62,6 +64,16 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn handle_expand_file_name<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
+) -> Result<()> {
+    let expanded = expanduser::expanduser(filename)?;
+    let abs = expanded.absolutize()?.to_path_buf();
+    let path = abs.to_string_lossy();
+    println!("{}", path);
+    connection.write_frame(Frame::new(FrameType::Data, path.len(), path.as_bytes())).await
 }
 
 async fn handle_file_exists<'a>(
