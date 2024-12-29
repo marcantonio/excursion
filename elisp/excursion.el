@@ -7,6 +7,7 @@
 (defvar excursion--process-name "excursion")
 
 (defvar excursion--frame-types '((?^ . Data)
+                                 (?! . Err)
                                  (?\( . Open)
                                  (?&  . Save)))
 
@@ -34,6 +35,21 @@ necessary."
     (process-put process 'filename filename)
     (process-send-string excursion--process-name request)))
 
+(defun excursion-open-remote-directory (directory)
+  (interactive "DDirectory: ")
+  (let ((request (format "~%s|%s" (length directory) directory))
+        (process (excursion--remote-connection)))
+    (process-put process 'directory directory)
+    (process-send-string excursion--process-name request)))
+
+(defun excursion-expand-file-name (filename &optional directory)
+  (message "<>%s" filename)
+  (let* ((path filename)
+         (request (format "*%s|%s" (length path) path))
+         (process (excursion--remote-connection)))
+    (process-put process 'filename path)
+    (process-send-string excursion--process-name request)))
+
 (defun excursion--split-at-first (delimiter string)
   "Split STRING at the first occurrence of DELIMITER and return
 both."
@@ -59,14 +75,18 @@ both."
             (data . ,data)))))))
 
 (defun excursion--filter (process contents)
-  "Handle all input and output for the socket."
+  "Handle all output for the socket."
   (when (buffer-live-p (process-buffer process))
     ;; New buffer for file
     (let* ((frame (excursion--destructure-frame contents))
            (filename (process-get process 'filename))
-           (buffer (generate-new-buffer (file-name-nondirectory filename))))
-      (excursion--setup-buffer buffer filename (cdr (assoc 'data frame)))
-      (switch-to-buffer buffer))))
+           (buffer (generate-new-buffer (file-name-nondirectory filename)))
+           (type (cdr (assoc 'type frame)))
+           (data (cdr (assoc 'data frame))))
+      (cond ((eq type 'Data)
+             (excursion--setup-buffer buffer filename (cdr (assoc 'data frame)))
+             (switch-to-buffer buffer))
+            (t (message "ERR received %s: %s " type data))))))
 
 (defun excursion--setup-buffer (buffer filename contents)
   "Set up BUFFER for FILENAME and inject CONTENTS."
@@ -92,7 +112,26 @@ both."
       (file-error
        (error "failed to open remote connection: %s" (error-message-string err))))))
 
+(defun excursion-file-handler (operation &rest args)
+  (cond ((eq operation 'expand-file-name)
+         (apply #'excursion-expand-file-name args))
+        (t (let ((inhibit-file-name-handlers
+                  (cons 'excursion-file-handler
+                        (and (eq inhibit-file-name-operation operation)
+                             inhibit-file-name-handlers)))
+                 (inhibit-file-name-operation operation))
+             (apply operation args)))))
+
+(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+
+;(file-exists-p "/excursion:foo")
+(expand-file-name "/excursion:~/foo")
+;; (expand-file-name "/excursion:foo")
+;; (directory-files "/excursion:/home/mas")
+
+
+
 (progn
   (excursion-terminate)
-  (excursion-open-remote-file "./scripts/nc_test.bash"))
-  ;; (excursion-open-remote-file "./ss.txt"))
+  (excursion-expand-file-name "~/../mas/mm"))
+  ;(excursion-open-remote-file "./scripts/nc_test.bash"))

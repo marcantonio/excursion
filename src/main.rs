@@ -2,7 +2,6 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use frame::FrameType;
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -13,6 +12,7 @@ use tokio::{
 };
 
 use connection::Connection;
+use frame::FrameType;
 
 use crate::frame::Frame;
 
@@ -35,7 +35,7 @@ async fn main() {
     loop {
         let (socket, _) = listener.accept().await.unwrap();
 
-        println!("Accepted");
+        println!("accepted");
 
         tokio::spawn(async move {
             process_frames(socket).await.unwrap();
