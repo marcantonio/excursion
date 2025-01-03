@@ -2,12 +2,13 @@
 
 (defvar excursion-host "localhost")
 (defvar excursion-port 7001)
-(defvar excursion--process-name "excursion")
-(defvar excursion--frame-types '((?^ . Data)
-                                 (?! . Err)
-                                 (?\( . Open)
-                                 (?&  . Save)))
-
+(defconst excursion--process-name "excursion")
+(defconst excursion--frame-types '(("^" . Data)
+                                 ("!" . Err)
+                                 ("(" . Open)
+                                 ("&"  . Save)))
+(defvar excursion--queue nil)
+(defvar excursion--data nil)
 
 ;;; Commands
 
@@ -16,10 +17,13 @@
 necessary."
   (interactive "GFilename: ")
   ;; Concatentate filename length and the filename
-  (let ((request (format "(%s|%s" (length filename) filename))
-        (process (excursion--remote-connection)))
-    ;; Put the filename on the process object
-    (process-put process 'filename filename)
+  (let* ((request (format "(%s|%s" (length filename) filename))
+         (process (excursion--remote-connection)))
+    (excursion--queue-nq excursion--queue
+                         (lambda (data)
+                           (let ((buffer (generate-new-buffer (file-name-nondirectory filename))))
+                             (excursion--setup-buffer buffer filename data)
+                             (switch-to-buffer buffer))))
     (process-send-string excursion--process-name request)))
 
 (defun excursion-open-remote-directory (directory)
@@ -41,7 +45,6 @@ necessary."
 ;;; File operations
 
 (defun excursion-expand-file-name (filename &optional directory)
-  (message "<>%s" filename)
   (let* ((path filename)
          (request (format "*%s|%s" (length path) path))
          (process (excursion--remote-connection)))
@@ -70,6 +73,8 @@ necessary."
     (condition-case err
         ;; Create a new process if one doesn't exist
         (let ((process (open-network-stream excursion--process-name "*excursion*" excursion-host excursion-port)))
+          (setq excursion--queue (excursion--queue-create))
+          (setq excursion--data "")
           (set-process-filter process 'excursion--filter)
           process)
       (file-error
@@ -78,36 +83,58 @@ necessary."
 (defun excursion--filter (process contents)
   "Handle all output from the socket."
   (when (buffer-live-p (process-buffer process))
-    ;; New buffer for file
-    (let* ((frame (excursion--destructure-frame contents))
-           (filename (process-get process 'filename))
-           (buffer (generate-new-buffer (file-name-nondirectory filename)))
-           (type (cdr (assoc 'type frame)))
-           (data (cdr (assoc 'data frame))))
+    ;; Append all data to excursion--data
+    (setq excursion--data (concat excursion--data contents))
+    ;; Attempt to read frames from the buffer
+    (while-let ((frame (excursion--read-frame))
+                (comp-fn (excursion--queue-dq excursion--queue))
+                (type (cdr (assoc 'type frame)))
+                (data (cdr (assoc 'data frame))))
       (cond ((eq type 'Data)
-             (excursion--setup-buffer buffer filename (cdr (assoc 'data frame)))
-             (switch-to-buffer buffer))
+             ;; Call frame completion handler
+             (funcall comp-fn data))
             (t (message "ERR received %s: %s " type data))))))
 
-(defun excursion--destructure-frame (frame)
-  "Validate FRAME and return it as an alist."
-  (let* ((frame-halves (excursion--split-at-first "|" frame))
-         (preamble (car frame-halves))
-         (data (cadr frame-halves)))
-    ;; XXX: Err on bad frame
-    (when (and preamble (not (string-empty-p preamble)))
-      ;; Get the frame type and length
-      (let ((type (excursion--get-frame-type (aref preamble 0)))
-            (len (string-to-number (substring preamble 1))))
-        ;; Return the frame as an alist
-        (when (and type len data)
+;; Assumes excursion--data points to the start of a frame
+(defun excursion--read-frame ()
+  "Attempt to construct a frame from `excursion--data'. Return as an alist."
+  (unless (string-empty-p excursion--data)
+    ;; Match the type and length fields
+    (string-match "^\\(.\\)\\([0-9]+\\)|" excursion--data)
+    ;; Get the frame type, specified data length, and the start and end of the data
+    (let* ((type (excursion--get-frame-type (match-string 1 excursion--data)))
+           (data-len (string-to-number (match-string 2 excursion--data)))
+           (data-start (match-end 0))
+           (data-end (+ data-start data-len)))
+      ;; Make sure there is a least enough for one frame
+      (when (>= (length excursion--data) data-end)
+        (let ((data (substring excursion--data data-start data-end)))
+          ;; Truncate over the old data
+          (setq excursion--data (substring excursion--data data-end))
+          ;; Return as an alist
           `((type . ,type)
-            (len . ,len)
+            (data-len . ,data-len)
             (data . ,data)))))))
 
-(defun excursion--get-frame-type (char)
-  "Use the CHAR to lookup the frame type."
-  (cdr (assoc char excursion--frame-types)))
+(defun excursion--get-frame-type (str)
+  "Use STR to lookup the frame type."
+  (cdr (assoc str excursion--frame-types)))
+
+;;; Completion queue
+
+(defun excursion--queue-create ()
+  "Create an empty queue."
+  (list nil))
+
+(defun excursion--queue-nq (q item)
+  "Add ITEM to Q."
+  (setcar q (nconc (car q) (cons item nil))))
+
+(defun excursion--queue-dq (q)
+  "Remove item from Q."
+  (let ((item (car (car q))))
+    (setcar q (cdr (car q)))
+    item))
 
 ;;; Util
 
@@ -130,15 +157,13 @@ both."
     (set-buffer-modified-p nil)
     (goto-char (point-min))))
 
-;;(file-exists-p "/excursion:foo")
-(expand-file-name "/excursion:~/foo")
+;; (file-exists-p "/excursion:foo")
+;; (expand-file-name "/excursion:~/foo")
 ;; (expand-file-name "/excursion:foo")
 ;; (directory-files "/excursion:/home/mas")
-
-
 
 (progn
   (excursion-terminate)
   ;;(excursion-expand-file-name "~/../mas/mm"))
-  (excursion-open-remote-file "./scripts/nc_test.bash")
-  (excursion-open-remote-file "./Cargo.toml"))
+  (excursion-open-remote-file "./Cargo.toml")
+  (excursion-open-remote-file "./scripts/nc_test.bash"))

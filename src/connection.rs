@@ -2,7 +2,7 @@ use std::cmp;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::frame::{FrameType, Frame};
+use crate::frame::{Frame, FrameType};
 
 const READ_BUF_CAP: usize = 4096;
 
@@ -77,7 +77,7 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
     async fn get_preamble(&mut self) -> Result<Option<(FrameType, usize)>> {
         loop {
             // Search for a `|` from the cursor on. If we get it, assume that the first
-            // available byte is the command. If we don't get the char, read more.
+            // available byte is the command. If we don't get the char, read more
             //
             // Note: Because this function must be called at the beginning of a frame, we
             // can assume the cursor starts at a command
