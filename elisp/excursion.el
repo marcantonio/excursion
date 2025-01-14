@@ -4,9 +4,9 @@
 (defvar excursion-port 7001)
 (defconst excursion--process-name "excursion")
 (defconst excursion--frame-types '(("^" . Data)
-                                 ("!" . Err)
-                                 ("(" . Open)
-                                 ("&"  . Save)))
+                                   ("!" . Err)
+                                   ("(" . Open)
+                                   ("&"  . Save)))
 (defvar excursion--queue nil)
 (defvar excursion--data nil)
 
@@ -19,18 +19,24 @@ necessary."
   ;; Concatentate filename length and the filename
   (let* ((request (format "(%s|%s" (length filename) filename))
          (process (excursion--remote-connection)))
-    (excursion--queue-nq excursion--queue
-                         (lambda (data)
-                           (let ((buffer (generate-new-buffer (file-name-nondirectory filename))))
-                             (excursion--setup-buffer buffer filename data)
-                             (switch-to-buffer buffer))))
+    (excursion--queue-nq
+     excursion--queue
+     (lambda (data)
+       (let ((buffer (generate-new-buffer (file-name-nondirectory filename))))
+         (excursion--setup-buffer buffer filename data)
+         (switch-to-buffer buffer))))
     (process-send-string excursion--process-name request)))
 
 (defun excursion-open-remote-directory (directory)
   (interactive "DDirectory: ")
   (let ((request (format "~%s|%s" (length directory) directory))
         (process (excursion--remote-connection)))
-    (process-put process 'directory directory)
+    (excursion--queue-nq
+     excursion--queue
+     (lambda (data)
+       (let ((buffer (generate-new-buffer (file-name-nondirectory directory))))
+         (excursion--setup-buffer buffer directory data)
+         (switch-to-buffer buffer))))
     (process-send-string excursion--process-name request)))
 
 (defun excursion-terminate ()
@@ -44,13 +50,6 @@ necessary."
 
 ;;; File operations
 
-(defun excursion-expand-file-name (filename &optional directory)
-  (let* ((path filename)
-         (request (format "*%s|%s" (length path) path))
-         (process (excursion--remote-connection)))
-    (process-put process 'filename path)
-    (process-send-string excursion--process-name request)))
-
 (defun excursion-file-handler (operation &rest args)
   (cond ((eq operation 'expand-file-name)
          (apply #'excursion-expand-file-name args))
@@ -61,7 +60,12 @@ necessary."
                  (inhibit-file-name-operation operation))
              (apply operation args)))))
 
-;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+;;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+
+(defun excursion-expand-file-name (filename &optional directory)
+  (let* ((path filename)
+         (request (format "*%s|%s" (length path) path)))
+    (excursion--make-request request)))
 
 ;;; Connection
 
@@ -75,7 +79,12 @@ necessary."
         (let ((process (open-network-stream excursion--process-name "*excursion*" excursion-host excursion-port)))
           (setq excursion--queue (excursion--queue-create))
           (setq excursion--data "")
+          (process-put process 'results nil)
           (set-process-filter process 'excursion--filter)
+          (set-process-sentinel process
+                                (lambda (process event)
+                                  (princ
+                                   (format "Process: %s had the event '%s'" process event))))
           process)
       (file-error
        (error "failed to open remote connection: %s" (error-message-string err))))))
@@ -91,9 +100,26 @@ necessary."
                 (type (cdr (assoc 'type frame)))
                 (data (cdr (assoc 'data frame))))
       (cond ((eq type 'Data)
-             ;; Call frame completion handler
-             (funcall comp-fn data))
+             (if (functionp comp-fn)
+                 ;; Call frame completion handler
+                 (funcall comp-fn data)
+               ;; Put results on process
+               (process-put process 'results data)))
             (t (message "ERR received %s: %s " type data))))))
+
+(defun excursion--make-request (request)
+  "Send REQUEST to process"
+  (let ((process (excursion--remote-connection)))
+    (excursion--queue-nq excursion--queue 'store)
+    (process-send-string excursion--process-name request)
+    (let ((result nil))
+      ;; This blocks hard
+      (while (not result)
+        ;; consider (with-local-quit)
+        (accept-process-output process 0.1 nil t)
+        (setq result (process-get process 'results)))
+      (process-put process 'results nil)
+      result)))
 
 ;; Assumes excursion--data points to the start of a frame
 (defun excursion--read-frame ()
@@ -136,15 +162,10 @@ necessary."
     (setcar q (cdr (car q)))
     item))
 
-;;; Util
+(defun excursion--queue-len (q)
+  (length q))
 
-(defun excursion--split-at-first (delimiter string)
-  "Split STRING at the first occurrence of DELIMITER and return
-both."
-  (let ((pos (string-match (regexp-quote delimiter) string)))
-    (when pos
-      (list (substring string 0 pos)
-            (substring string (+ pos (length delimiter)))))))
+;;; Util
 
 (defun excursion--setup-buffer (buffer filename contents)
   "Set up BUFFER for FILENAME and inject CONTENTS."
@@ -158,12 +179,12 @@ both."
     (goto-char (point-min))))
 
 ;; (file-exists-p "/excursion:foo")
-;; (expand-file-name "/excursion:~/foo")
 ;; (expand-file-name "/excursion:foo")
 ;; (directory-files "/excursion:/home/mas")
 
-(progn
-  (excursion-terminate)
-  ;;(excursion-expand-file-name "~/../mas/mm"))
-  (excursion-open-remote-file "./Cargo.toml")
-  (excursion-open-remote-file "./scripts/nc_test.bash"))
+;; (progn
+;;   (excursion-terminate)
+;;   ;;(excursion-expand-file-name "~/../mas/mm"))
+;;   (excursion-open-remote-file "./Cargo.toml")
+;;   (excursion-open-remote-file "./scripts/nc_test.bash")
+;;   (excursion-open-remote-directory "/home/mas"))
