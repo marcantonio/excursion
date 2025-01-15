@@ -10,6 +10,8 @@
 (defvar excursion--queue nil)
 (defvar excursion--data nil)
 
+;;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+
 ;;; Commands
 
 (defun excursion-open-remote-file (filename)
@@ -60,7 +62,18 @@ necessary."
                  (inhibit-file-name-operation operation))
              (apply operation args)))))
 
-;;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+(defun excursion-insert-file-contents (filename &optional visit beg end replace)
+  (let* ((path (excursion-expand-file-name filename))
+         (request (format "(%s|%s" (length path) path))
+         (contents (excursion--make-request request)))
+    (insert contents)
+    (when visit
+      (setq buffer-file-name filename
+            buffer-read-only t)
+      (set-visited-file-modtime)
+      (set-buffer-modified-p nil))
+    (cons path (length contents))))
+
 
 (defun excursion-expand-file-name (filename &optional directory)
   (let* ((path filename)
@@ -124,23 +137,28 @@ necessary."
 ;; Assumes excursion--data points to the start of a frame
 (defun excursion--read-frame ()
   "Attempt to construct a frame from `excursion--data'. Return as an alist."
-  (unless (string-empty-p excursion--data)
+  (unless (and (not (null excursion--data))
+               (string-empty-p excursion--data))
+    (message ">>>%s" (substring excursion--data 0 (min 20 (length excursion--data))))
     ;; Match the type and length fields
     (string-match "^\\(.\\)\\([0-9]+\\)|" excursion--data)
+    (message "<<<%s" (match-string 1 excursion--data))
     ;; Get the frame type, specified data length, and the start and end of the data
-    (let* ((type (excursion--get-frame-type (match-string 1 excursion--data)))
-           (data-len (string-to-number (match-string 2 excursion--data)))
-           (data-start (match-end 0))
-           (data-end (+ data-start data-len)))
-      ;; Make sure there is a least enough for one frame
-      (when (>= (length excursion--data) data-end)
-        (let ((data (substring excursion--data data-start data-end)))
-          ;; Truncate over the old data
-          (setq excursion--data (substring excursion--data data-end))
-          ;; Return as an alist
-          `((type . ,type)
-            (data-len . ,data-len)
-            (data . ,data)))))))
+    (if-let* ((type-match (match-string 1 excursion--data))
+              (type (excursion--get-frame-type type-match))
+              (len-match (match-string 2 excursion--data))
+              (data-len (string-to-number len-match))
+              (data-start (match-end 0))
+              (data-end (+ data-start data-len)))
+        ;; Make sure there is a least enough for one frame
+        (when (>= (length excursion--data) data-end)
+          (let ((data (substring excursion--data data-start data-end)))
+            ;; Truncate over the old data
+            (setq excursion--data (substring excursion--data data-end))
+            ;; Return as an alist
+            `((type . ,type)
+              (data-len . ,data-len)
+              (data . ,data)))))))
 
 (defun excursion--get-frame-type (str)
   "Use STR to lookup the frame type."
