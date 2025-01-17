@@ -3,33 +3,52 @@ use std::fmt::Display;
 #[derive(Debug, PartialEq)]
 pub struct Frame {
     pub ty: FrameType,
-    pub data_len: usize,
-    pub data: Vec<u8>,
+    pub payload: Vec<u8>,
+    pub payload_len: usize,
+    pub segment_lens: Vec<usize>,
 }
 
 impl Frame {
-    pub fn new(ty: FrameType, length: usize, src_data: &[u8]) -> Self {
-        let mut frame = Frame { ty, data_len: length, data: Vec::with_capacity(length) };
-        frame.copy_from(src_data);
+    pub fn new(ty: FrameType, payload: &[u8], segment_lens: &[usize]) -> Self {
+        let payload_len = segment_lens.iter().sum();
+        let mut frame = Frame {
+            ty,
+            payload: Vec::with_capacity(payload_len),
+            payload_len,
+            segment_lens: segment_lens.to_owned(),
+        };
+        frame.copy_from(payload);
         frame
     }
 
     pub fn is_partial(&self) -> bool {
-        self.data.len() < self.data_len
+        self.payload.len() < self.payload_len
     }
 
     pub fn copy_from(&mut self, src: &[u8]) {
-        // `src_data.len()` should be smaller than `length`
-        assert!(src.len() <= self.data_len);
-        self.data.extend_from_slice(src);
+        // `src.len()` should be smaller than `length`
+        assert!(src.len() <= self.payload_len);
+        self.payload.extend_from_slice(src);
+    }
+
+    // test?
+    pub fn iter_segments(&self) -> impl Iterator<Item = &[u8]> {
+        let mut offest = 0;
+        self.segment_lens.iter().map(move |&len| {
+            let start = offest;
+            let end = start + len;
+            let slice = &self.payload[start..end];
+            offest = end;
+            slice
+        })
     }
 }
 
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let sub = self.data.iter().cloned().take(8).collect::<Vec<_>>();
+        let sub = self.payload.iter().cloned().take(8).collect::<Vec<_>>();
         let data_str = String::from_utf8_lossy(&sub).replace('\n', "\\n");
-        write!(f, "<{}, {}, {}...>", self.ty, self.data_len, data_str)
+        write!(f, "<{}, {}, {}...>", self.ty, self.payload_len, data_str)
     }
 }
 

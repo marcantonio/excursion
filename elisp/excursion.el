@@ -9,6 +9,7 @@
                                    ("&"  . Save)))
 (defvar excursion--queue nil)
 (defvar excursion--data nil)
+(defvar excursion-timeout 2)
 
 ;;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
 
@@ -76,8 +77,12 @@ necessary."
 
 
 (defun excursion-expand-file-name (filename &optional directory)
-  (let* ((path filename)
-         (request (format "*%s|%s" (length path) path)))
+  (let* ((filename_len (length filename))
+         (request
+          (if (not directory)
+              (format "*%s|%s" filename_len filename)
+            (format "*%s;%s|%s" filename_len (length directory)
+                    (concat filename directory)))))
     (excursion--make-request request)))
 
 ;;; Connection
@@ -122,27 +127,26 @@ necessary."
 
 (defun excursion--make-request (request)
   "Send REQUEST to process"
-  (let ((process (excursion--remote-connection)))
-    (excursion--queue-nq excursion--queue 'store)
-    (process-send-string excursion--process-name request)
-    (let ((result nil))
-      ;; This blocks hard
-      (while (not result)
-        ;; consider (with-local-quit)
-        (accept-process-output process 0.1 nil t)
-        (setq result (process-get process 'results)))
-      (process-put process 'results nil)
-      result)))
+  (with-timeout (excursion-timeout (message "timeout failure"))
+    (let ((process (excursion--remote-connection)))
+      (excursion--queue-nq excursion--queue 'store)
+      (process-send-string excursion--process-name request)
+      (let ((result nil))
+        ;; This blocks hard
+        (while (not result)
+          ;; consider (with-local-quit)
+          (accept-process-output process 0.1 nil t)
+          (setq result (process-get process 'results)))
+        (process-put process 'results nil)
+        result))))
 
 ;; Assumes excursion--data points to the start of a frame
 (defun excursion--read-frame ()
   "Attempt to construct a frame from `excursion--data'. Return as an alist."
   (unless (and (not (null excursion--data))
                (string-empty-p excursion--data))
-    (message ">>>%s" (substring excursion--data 0 (min 20 (length excursion--data))))
     ;; Match the type and length fields
     (string-match "^\\(.\\)\\([0-9]+\\)|" excursion--data)
-    (message "<<<%s" (match-string 1 excursion--data))
     ;; Get the frame type, specified data length, and the start and end of the data
     (if-let* ((type-match (match-string 1 excursion--data))
               (type (excursion--get-frame-type type-match))

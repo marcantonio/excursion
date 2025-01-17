@@ -53,12 +53,13 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
 
         println!("frame type: {}", frame.ty);
 
-        let frame_data = String::from_utf8_lossy(&frame.data);
+        let segments =
+            frame.iter_segments().map(|s| std::str::from_utf8(s).unwrap_or("")).collect::<Vec<_>>();
         match frame.ty {
-            DirList => handle_dir_list(&mut connection, &frame_data).await?,
-            ExpandFileName => handle_expand_file_name(&mut connection, &frame_data).await?,
-            FileExists => handle_file_exists(&mut connection, &frame_data).await?,
-            Open => handle_open(&mut connection, &frame_data).await?,
+            DirList => handle_dir_list(&mut connection, &segments[0]).await?,
+            ExpandFileName => handle_expand_file_name(&mut connection, &segments).await?,
+            FileExists => handle_file_exists(&mut connection, &segments[0]).await?,
+            Open => handle_open(&mut connection, &segments[0]).await?,
             Save => todo!(),
             _ => unimplemented!(),
         }
@@ -67,13 +68,17 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
 }
 
 async fn handle_expand_file_name<'a>(
-    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
 ) -> Result<()> {
-    let expanded = expanduser::expanduser(filename)?;
+    let expanded = match params {
+        [filename, directory] => Ok(expanduser::expanduser(format!("{}/{}", directory, filename))?),
+        [filename] => Ok(expanduser::expanduser(filename)?),
+        _ => Err("bad segment"),
+    }?;
     let abs = expanded.absolutize()?.to_path_buf();
     let path = abs.to_string_lossy();
-    println!("{}", path);
-    connection.write_frame(Frame::new(FrameType::Data, path.len(), path.as_bytes())).await
+    //sleep(Duration::from_secs(5)).await;
+    connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
 }
 
 async fn handle_file_exists<'a>(
@@ -81,7 +86,7 @@ async fn handle_file_exists<'a>(
 ) -> Result<()> {
     let path = Path::new(filename);
     let exists = if path.exists() { "1" } else { "0" };
-    connection.write_frame(Frame::new(FrameType::Data, 1, exists.as_bytes())).await
+    connection.write_frame(Frame::new(FrameType::Data, exists.as_bytes(), &[1])).await
 }
 
 async fn handle_dir_list<'a>(
@@ -92,20 +97,23 @@ async fn handle_dir_list<'a>(
         .collect::<core::result::Result<Vec<_>, io::Error>>()?
         .join(", "); // XXX: escape commas
 
-    connection.write_frame(Frame::new(FrameType::Data, entries.len(), entries.as_bytes())).await
+    connection.write_frame(Frame::new(FrameType::Data, entries.as_bytes(), &[entries.len()])).await
 }
 
 async fn handle_open<'a>(
     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
 ) -> Result<()> {
+    if filename == "./Cargo.toml" {
+        //sleep(Duration::from_secs(1)).await;
+    }
     match open_file(filename).await {
         Ok(contents) => {
-            connection.write_frame(Frame::new(FrameType::Data, contents.len(), contents.as_bytes())).await
+            connection.write_frame(Frame::new(FrameType::Data, contents.as_bytes(), &[contents.len()])).await
         },
         Err(e) => {
             let err_msg = e.to_string();
             println!("error: {}", err_msg);
-            connection.write_frame(Frame::new(FrameType::Err, err_msg.len(), err_msg.as_bytes())).await
+            connection.write_frame(Frame::new(FrameType::Err, err_msg.as_bytes(), &[err_msg.len()])).await
         },
     }
 }

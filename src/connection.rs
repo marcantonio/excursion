@@ -40,16 +40,17 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
     pub async fn read_frame(&mut self) -> Result<Option<Frame>> {
         // Get the command and frame length. Otherwise, return `None` indicating EOF on
         // the socket. This is where a normal socket close on the far end will occur
-        let (cmd, len) = match self.get_preamble().await? {
-            Some((cmd, len)) => (cmd, len),
+        let (cmd, lengths) = match self.get_preamble().await? {
+            Some((cmd, lengths)) => (cmd, lengths),
             None => return Ok(None),
         };
+        let payload_length = lengths.iter().sum();
 
         // Always take the min of the rx_buffer and the frame length. Don't make the frame
         // worry about this. The buffer will either truncate the frame (requiring another
         // read) or contain the whole frame
-        let n = cmp::min(self.rx_buffer().len(), len);
-        let mut frame = Frame::new(cmd, len, &self.rx_buffer()[..n]);
+        let n = cmp::min(self.rx_buffer().len(), payload_length);
+        let mut frame = Frame::new(cmd, &self.rx_buffer()[..n], &lengths);
         self.cursor += n;
 
         // While we don't have the whole frame in rx_buffer, keep reading
@@ -63,7 +64,7 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
             // Take the lesser of the bytes required to complete the frame or
             // `bytes_read`. This ensures we copy as much as possible without overflowing
             // the frame
-            let bytes_needed = len - frame.data.len();
+            let bytes_needed = payload_length - frame.payload.len();
             let n = cmp::min(bytes_read, bytes_needed);
             frame.copy_from(&self.rx_buffer()[..n]);
             self.cursor += n;
@@ -74,7 +75,7 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
 
     // Get the command and the frame length from the buffer, reading if necessary. Must be
     // called only at the beginning of a frame
-    async fn get_preamble(&mut self) -> Result<Option<(FrameType, usize)>> {
+    async fn get_preamble(&mut self) -> Result<Option<(FrameType, Vec<usize>)>> {
         loop {
             // Search for a `|` from the cursor on. If we get it, assume that the first
             // available byte is the command. If we don't get the char, read more
@@ -83,10 +84,16 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
             // can assume the cursor starts at a command
             if let Some(i) = self.rx_buffer().iter().position(|&x| x == b'|') {
                 let cmd = (*self.rx_buffer().first().unwrap()).try_into()?;
-                let len = atoi::atoi::<usize>(&self.rx_buffer()[1..i]).ok_or("invalid frame size")?;
+                // The length field can have multiple values separated by ';'
+                let lengths = &self.rx_buffer()[1..i]
+                    .split(|n| *n == b';')
+                    .map(|len| atoi::atoi::<usize>(len))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or("invalid frame sizes")?;
+
                 // Increment the cursor the length of the preamble + 1 to start at the data segment
                 self.cursor += i + 1;
-                return Ok(Some((cmd, len)));
+                return Ok(Some((cmd, lengths.to_vec())));
             }
 
             // Read until we have the whole preamble or the socket closes
@@ -122,13 +129,13 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
         match frame.ty {
             Data => {
                 self.tx.write_u8(b'^').await?;
-                self.tx.write_all(format!("{}|", frame.data_len).as_bytes()).await?;
-                self.tx.write_all(&frame.data).await?;
+                self.tx.write_all(format!("{}|", frame.payload_len).as_bytes()).await?;
+                self.tx.write_all(&frame.payload).await?;
             },
             Err => {
                 self.tx.write_u8(b'!').await?;
-                self.tx.write_all(format!("{}|", frame.data_len).as_bytes()).await?;
-                self.tx.write_all(&frame.data).await?;
+                self.tx.write_all(format!("{}|", frame.payload_len).as_bytes()).await?;
+                self.tx.write_all(&frame.payload).await?;
             },
             _ => unimplemented!(),
         }
@@ -158,7 +165,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
     }
 
     #[tokio::test]
@@ -166,10 +173,14 @@ mod tests {
         let tests = HashMap::from([
             ("8|testdata", "invalid command"),
             ("$8|testdata", "invalid command"),
-            ("&a|testdata", "invalid frame size"),
-            ("&|testdata", "invalid frame size"),
+            ("&a|testdata", "invalid frame sizes"),
+            ("&|testdata", "invalid frame sizes"),
+            ("&8;|testdata", "invalid frame sizes"),
+            ("&8;a|testdata", "invalid frame sizes"),
             ("&8testdata", "malformed preamble or connection reset by peer"),
             ("&9|testdata", "malformed data or connection reset by peer"),
+            ("&9;4|testdatamore", "malformed data or connection reset by peer"),
+            ("&8;5|testdatamore", "malformed data or connection reset by peer"),
         ]);
 
         for (input, err) in tests {
@@ -186,7 +197,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
         assert!(connection.buffer.capacity() == 4, "didn't grow");
     }
 
@@ -197,7 +208,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
     }
 
     #[tokio::test]
@@ -206,7 +217,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed data or connection reset by peer"));
     }
@@ -217,9 +228,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
     }
 
     #[tokio::test]
@@ -242,9 +253,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, 8, b"testdata"));
+        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed preamble or connection reset by peer"));
     }
@@ -255,6 +266,25 @@ mod tests {
         let writer = Builder::new().write(b"^13|file contents").build();
         let mut connection = Connection::new(reader, writer);
         connection.read_frame().await.unwrap().unwrap();
-        connection.write_frame(Frame::new(FrameType::Data, 13, b"file contents")).await.unwrap();
+        connection.write_frame(Frame::new(FrameType::Data, b"file contents", &[13])).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn multi_len() {
+        let tests = HashMap::from([
+            ("&8;4|testdatamore", Frame::new(FrameType::Save, b"testdatamore", &[8, 4])),
+            ("&8|testdata", Frame::new(FrameType::Save, b"testdata", &[8])),
+            ("&8;4;7|testdatamoreandmore", Frame::new(FrameType::Save, b"testdatamoreandmore", &[8, 4, 7])),
+            ("&8;4|testdatamoreand", Frame::new(FrameType::Save, b"testdatamore", &[8, 4])),
+            ("&7;5|testdatamore", Frame::new(FrameType::Save, b"testdatamore", &[7, 5])), // valid but wrong
+        ]);
+
+        for (input, test_frame) in tests {
+            let reader = Builder::new().read(input.as_bytes()).build();
+            let writer = Builder::new().build();
+            let mut connection = Connection::new(reader, writer);
+            let frame = connection.read_frame().await.unwrap().unwrap();
+            assert!(frame == test_frame);
+        }
     }
 }
