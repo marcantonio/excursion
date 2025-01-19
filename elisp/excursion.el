@@ -11,7 +11,7 @@
 (defvar excursion--data nil)
 (defvar excursion-timeout 2)
 
-;;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
 
 ;;; Commands
 
@@ -53,9 +53,14 @@ necessary."
 
 ;;; File operations
 
+;;(add-to-list 'file-name-handler-alist '(".*" . excursion-file-handler))
+
 (defun excursion-file-handler (operation &rest args)
+  (message "op: %s" operation)
   (cond ((eq operation 'expand-file-name)
          (apply #'excursion-expand-file-name args))
+        ;; ((eq operation 'insert-file-contents)
+        ;;  (apply operation args))
         (t (let ((inhibit-file-name-handlers
                   (cons 'excursion-file-handler
                         (and (eq inhibit-file-name-operation operation)
@@ -75,15 +80,100 @@ necessary."
       (set-buffer-modified-p nil))
     (cons path (length contents))))
 
+;; (progn
+;;   (excursion-terminate)
+;;   (let* ((filename "src/main.rs")
+;;          (buffer (generate-new-buffer (file-name-nondirectory filename))))
+;;     (with-current-buffer buffer
+;;       (setq default-directory (concat "/excursion:" (file-name-directory filename)))
+;;       (excursion-insert-file-contents filename t)
+;;       (set-auto-mode)
+;;       (goto-char (point-min)))
+;;     (switch-to-buffer buffer)))
+
+;; (progn
+;;   (excursion-terminate)
+;;   (excursion-expand-file-name "~src/main.rs"))
+
+(excursion-expand-file-name "~/ms" "/asdf")
+(expand-file-name "~/ms" "/asdf")
+;; handle err
+;; (defun excursion-expand-file-name (filename &optional directory)
+;;   (let ((filename_len (length filename))
+;;         (directory (or directory default-directory)))
+;;    (excursion--make-request
+;;     (format "*%s;%s|%s"
+;;             filename_len
+;;             (length directory)
+;;             (concat filename directory)))))
+
+(progn
+  (excursion-terminate)
+  (let ((pairs
+         '(("foo" "bar")
+           ("~/foo" "~ms")))
+        (count 1))
+    (condition-case err
+        (catch 'done
+          (dolist (pair pairs)
+            (let ((file (car pair))
+                  (dir (cadr pair)))
+              ;;(message ">%s" pair)
+              (when (not (equal
+                          (excursion-expand-file-name file dir)
+                          (expand-file-name file dir)))
+                (message ">>>>%d \"%s\" \"%s\"" count file dir)
+                (throw 'done "doneso")))
+            (setq count (1+ count)))11
+          (error
+           (message "An error occurred: %s" (error-message-string err)))))))
+
+(excursion-expand-file-name "foo" "bar")
+(expand-file-name "foo" "bar")
 
 (defun excursion-expand-file-name (filename &optional directory)
-  (let* ((filename_len (length filename))
-         (request
-          (if (not directory)
-              (format "*%s|%s" filename_len filename)
-            (format "*%s;%s|%s" filename_len (length directory)
-                    (concat filename directory)))))
-    (excursion--make-request request)))
+  (let ((directory
+         (cond ((or
+                 (string-prefix-p "/" filename)
+                 (string-prefix-p "~/" filename)) "")
+               ((or
+                 (string-prefix-p "~" filename)
+                 (string-prefix-p "~" directory)) directory)
+               ((null directory) default-directory)
+               ((not (string-prefix-p "/" directory))
+                (concat default-directory directory))
+               (t directory))))
+    (message ">>%s" directory)
+    (let ((res
+           (excursion--make-request
+            (format "*%s;%s;%s|%s"
+                    (length filename)
+                    (length directory)
+                    (length default-directory)
+                    (concat filename directory default-directory)))))
+      res)))
+
+;; (defun excursion-expand-file-name (filename &optional directory)
+;;   ;; (let ((directory
+;;   ;;        (cond ((or
+;;   ;;                (string-prefix-p "/" filename)
+;;   ;;                (string-prefix-p "~/" filename)) "")
+;;   ;;              ((or
+;;   ;;                (string-prefix-p "~" filename)
+;;   ;;                (string-prefix-p "~" directory)) directory)
+;;   ;;              ((null directory) default-directory)
+;;   ;;              ((not (string-prefix-p "/" directory))
+;;   ;;               (concat default-directory directory))
+;;   ;;              (t directory))))
+;;   ;;   (message ">>%s" directory)
+;;   (let ((res
+;;          (excursion--make-request
+;;           (format "*%s;%s;%s|%s"
+;;                   (length filename)
+;;                   (length directory)
+;;                   (length default-directory)
+;;                   (concat filename directory default-directory)))))
+;;     res))
 
 ;;; Connection
 
@@ -127,7 +217,10 @@ necessary."
 
 (defun excursion--make-request (request)
   "Send REQUEST to process"
-  (with-timeout (excursion-timeout (message "timeout failure"))
+  (with-timeout (excursion-timeout
+                 (progn
+                   (message "timeout failure")
+                   'timeout))
     (let ((process (excursion--remote-connection)))
       (excursion--queue-nq excursion--queue 'store)
       (process-send-string excursion--process-name request)
@@ -201,7 +294,7 @@ necessary."
     (goto-char (point-min))))
 
 ;; (file-exists-p "/excursion:foo")
-;; (expand-file-name "/excursion:foo")
+(expand-file-name "/excursion:foo")
 ;; (directory-files "/excursion:/home/mas")
 
 ;; (progn

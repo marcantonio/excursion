@@ -1,8 +1,10 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use path_absolutize::Absolutize;
+use tokio::time::sleep;
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -67,17 +69,78 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
     Ok(())
 }
 
+// async fn handle_expand_file_name<'a>(
+//     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
+// ) -> Result<()> {
+//     let (filename, directory) = match params {
+//         [f, d] => Ok((f, d)),
+//         _ => Err("handle_expand_file_name: bad segment"),
+//     }?;
+//     if filename.starts_with("~") && !filename.starts_with("~/") {
+//         match expanduser::expanduser(filename) {
+//             Ok(expanded) => {
+//                 let abs = expanded.absolutize()?.to_path_buf();
+//                 let path = abs.to_string_lossy();
+//                 return connection
+//                     .write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()]))
+//                     .await;
+//             },
+//             Err(_) => (),
+//         }
+//     }
+
+//     let expanded = expanduser::expanduser(format!("{}/{}", directory, filename))?;
+//     let abs = expanded.absolutize()?.to_path_buf();
+//     let path = abs.to_string_lossy();
+//     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
+// }
+
+// async fn handle_expand_file_name<'a>(
+//     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
+// ) -> Result<()> {
+//     let (file, dir) = match params {
+//         [f, d] => Ok((f, d)),
+//         _ => Err("handle_expand_file_name: bad segment"),
+//     }?;
+
+//     println!("{} {}", dir, file);
+//     let expanded = if file.starts_with("~") {
+//         if let Ok(exfile) = expanduser::expanduser(file) {
+//             Ok(exfile)
+//         } else {
+//             expanduser::expanduser(format!("{}/{}", dir, file))
+//         }
+//     } else if dir.starts_with("~") {
+//         if let Ok(exdir) = expanduser::expanduser(dir) {
+//             expanduser::expanduser(format!("{}/{}", exdir.to_string_lossy(), file))
+//         } else {
+//             expanduser::expanduser(format!("{}/{}", dir, file))
+//         }
+//     } else {
+//         expanduser::expanduser(format!("{}/{}", dir, file))
+//     }
+//     .unwrap_or_else(|_| Path::new(&format!("{}/{}", dir, file)).to_path_buf());
+//     //sleep(Duration::from_secs(2)).await;
+//     println!("{:?}", expanded);
+//     let abs = expanded.absolutize()?.to_path_buf();
+//     let path = abs.to_string_lossy();
+//     println!("{:?}", path);
+//     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
+// }
+
 async fn handle_expand_file_name<'a>(
     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
 ) -> Result<()> {
-    let expanded = match params {
-        [filename, directory] => Ok(expanduser::expanduser(format!("{}/{}", directory, filename))?),
-        [filename] => Ok(expanduser::expanduser(filename)?),
-        _ => Err("bad segment"),
+    let (file, dir, default_dir) = match params {
+        [f, d, dd] => Ok((f, d, dd)),
+        _ => Err("handle_expand_file_name: bad segment"),
     }?;
+    println!("{} {} {}", dir, file, default_dir);
+    let expanded = expanduser::expanduser(format!("{}/{}", dir, file))?;
+    println!("{:?}", expanded);
     let abs = expanded.absolutize()?.to_path_buf();
     let path = abs.to_string_lossy();
-    //sleep(Duration::from_secs(5)).await;
+    println!("{:?}", path);
     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
 }
 
