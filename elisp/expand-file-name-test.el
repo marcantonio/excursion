@@ -42,7 +42,13 @@
            (("~/foo" "~ms") "/home/mas/foo")
            (("~foo" "~ms") "/home/mas/excursion/~ms/~foo")
            (("~mas" "~ms") "/home/mas")
-           (("~baz" "~ms") "/home/mas/excursion/~ms/~baz")))
+           (("~baz" "~ms") "/home/mas/excursion/~ms/~baz")
+           (("foo" "") "/home/mas/excursion/foo")
+           (("foo" nil) "/home/mas/excursion/foo")
+           (("~/foo" nil) "/home/mas/foo")
+           (("/foo" nil) "/foo")
+           (("~foo" nil) "/home/mas/excursion/~foo")
+           (("~mas" nil) "/home/mas")))
         (count 1))
     (condition-case err
         (catch 'done
@@ -51,12 +57,16 @@
                    (file (car args))
                    (dir (cadr args))
                    (remote-result (cadr pair))
+                   (default-directory "/excursion:/home/mas/excursion/")
                    (local-result (excursion-expand-file-name file dir)))
               ;;(message ">%s" pair)
-              (when (not (equal local-result remote-result))
-                (message ">>>>%d \"%s\" \"%s\"\n  local:  %s\n  remote: %s"
+              (when (not (equal local-result (concat "/excursion:" remote-result)))
+                (message ">>>>%d\n  \"%s\" \"%s\"\n  local:  %s\n  remote: %s"
                          count file dir local-result remote-result)
                 (throw 'done "doneso")))
-            (setq count (1+ count)))
-          (error
-           (message "An error occurred: %s" (error-message-string err)))))))
+            (setq count (1+ count))))
+      (error
+       (message "An error occurred: %s" (error-message-string err))))))
+
+;; (let ((default-directory "/excursion:/home/mas/excursion/"))
+;;   (excursion-expand-file-name "~baz" "~ms"))
