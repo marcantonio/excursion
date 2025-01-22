@@ -64,7 +64,8 @@
                 (message ">>>>%d\n  \"%s\" \"%s\"\n  local:  %s\n  remote: %s"
                          count file dir local-result remote-result)
                 (throw 'done "doneso")))
-            (setq count (1+ count))))
+            (setq count (1+ count)))
+          'success)
       (error
        (message "An error occurred: %s" (error-message-string err))))))
 

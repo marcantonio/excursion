@@ -129,7 +129,11 @@ necessary."
       process
     (condition-case err
         ;; Create a new process if one doesn't exist
-        (let ((process (open-network-stream excursion--process-name "*excursion*" excursion-host excursion-port)))
+        (let ((process (open-network-stream
+                        excursion--process-name
+                        "*excursion*"
+                        excursion-host
+                        excursion-port)))
           (setq excursion--queue (excursion--queue-create))
           (setq excursion--data "")
           (process-put process 'results nil)
