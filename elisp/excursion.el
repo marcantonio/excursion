@@ -13,7 +13,7 @@
 (defvar excursion--data nil)
 (defvar excursion--prefix "/excursion:")
 
-;(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+(add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
 
 ;;; Commands
 
@@ -54,11 +54,8 @@ necessary."
         (delete-process process)))))
 
 ;;; File operations
-
-;;(add-to-list 'file-name-handler-alist '(".*" . excursion-file-handler))
-
 (defun excursion-file-handler (operation &rest args)
-  (message "op: %s" operation)
+  (message "op: %s %s" operation args)
   (cond ((eq operation 'expand-file-name)
          (apply #'excursion-expand-file-name args))
         ;; ((eq operation 'insert-file-contents)
@@ -172,7 +169,16 @@ necessary."
                  (progn
                    (message "timeout failure")
                    'timeout))
-    (let ((process (excursion--remote-connection)))
+    ;; It's important to forget `default-directory' here. Otherwise, we get into a loop
+    ;; when functions like `expand-file-name' are called before everything is loaded. For
+    ;; example, if the first thing you do is call `expand-file-name', and
+    ;; `default-directory' has `/excursion:' as a prefix. Then, as part of that call,
+    ;; `open-network-stream' will be called. Somewhere in there `(expand-file-name
+    ;; "~/.emacs.d/elisp" "/excursion:whatever")' is called. This, in turn, tries to call
+    ;; `open-network-stream', etc. Could consider limiting this to when `excursion-file-p'
+    ;; is true
+    (let* ((default-directory nil)
+           (process (excursion--remote-connection)))
       (excursion--queue-nq excursion--queue 'store)
       (process-send-string excursion--process-name request)
       (let ((result nil))
