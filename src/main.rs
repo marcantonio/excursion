@@ -1,5 +1,6 @@
 use std::fs;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use path_absolutize::Absolutize;
@@ -70,14 +71,23 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
 async fn handle_expand_file_name<'a>(
     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
 ) -> Result<()> {
-    let expanded = match params {
-        [filename, directory] => Ok(expanduser::expanduser(format!("{}/{}", directory, filename))?),
-        [filename] => Ok(expanduser::expanduser(filename)?),
-        _ => Err("bad segment"),
-    }?;
+    let [file, dir]: [&str; 2] = params.try_into().map_err(|_| "handle_expand_file_name: bad segment")?;
+
+    // Ignore the directory if the file will become absolute
+    let expanded = if file.starts_with("~") {
+        expanduser::expanduser(file).or_else(|_| expanduser::expanduser(format!("{}/{}", dir, file)))
+    } else if dir.starts_with("~") {
+        // Expand the directory and concat
+        expanduser::expanduser(dir)
+            .and_then(|exdir| Ok(Path::new(&exdir.into_os_string()).join(file)))
+    } else {
+        expanduser::expanduser(format!("{}/{}", dir, file))
+    }
+    .unwrap_or_else(|_| Path::new(dir).join(file));
+
+    // Clean up the path
     let abs = expanded.absolutize()?.to_path_buf();
-    let path = abs.to_string_lossy();
-    //sleep(Duration::from_secs(5)).await;
+    let path = abs.into_os_string();
     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
 }
 
