@@ -9,7 +9,6 @@
                                    ("!" . Err)
                                    ("(" . Open)
                                    ("&"  . Save)))
-(defvar excursion--queue nil)
 (defvar excursion--data nil)
 (defvar excursion--prefix "/excursion:")
 
@@ -17,32 +16,32 @@
 
 ;;; Commands
 
-(defun excursion-open-remote-file (filename)
-  "Open FILENAME remotely. Will create a new connection if
-necessary."
-  (interactive "GFilename: ")
-  ;; Concatentate filename length and the filename
-  (let* ((request (format "(%s|%s" (length filename) filename))
-         (process (excursion--remote-connection)))
-    (excursion--queue-nq
-     excursion--queue
-     (lambda (data)
-       (let ((buffer (generate-new-buffer (file-name-nondirectory filename))))
-         (excursion--setup-buffer buffer filename data)
-         (switch-to-buffer buffer))))
-    (process-send-string excursion--process-name request)))
+;; (defun excursion-open-remote-file (filename)
+;;   "Open FILENAME remotely. Will create a new connection if
+;; necessary."
+;;   (interactive "GFilename: ")
+;;   ;; Concatentate filename length and the filename
+;;   (let* ((request (format "(%s|%s" (length filename) filename))
+;;          (process (excursion--remote-connection)))
+;;     (excursion--queue-nq
+;;      excursion--queue
+;;      (lambda (data)
+;;        (let ((buffer (generate-new-buffer (file-name-nondirectory filename))))
+;;          (excursion--setup-buffer buffer filename data)
+;;          (switch-to-buffer buffer))))
+;;     (process-send-string excursion--process-name request)))
 
-(defun excursion-open-remote-directory (directory)
-  (interactive "DDirectory: ")
-  (let ((request (format "~%s|%s" (length directory) directory))
-        (process (excursion--remote-connection)))
-    (excursion--queue-nq
-     excursion--queue
-     (lambda (data)
-       (let ((buffer (generate-new-buffer (file-name-nondirectory directory))))
-         (excursion--setup-buffer buffer directory data)
-         (switch-to-buffer buffer))))
-    (process-send-string excursion--process-name request)))
+;; (defun excursion-open-remote-directory (directory)
+;;   (interactive "DDirectory: ")
+;;   (let ((request (format "~%s|%s" (length directory) directory))
+;;         (process (excursion--remote-connection)))
+;;     (excursion--queue-nq
+;;      excursion--queue
+;;      (lambda (data)
+;;        (let ((buffer (generate-new-buffer (file-name-nondirectory directory))))
+;;          (excursion--setup-buffer buffer directory data)
+;;          (switch-to-buffer buffer))))
+;;     (process-send-string excursion--process-name request)))
 
 (defun excursion-terminate ()
   "Terminate the excursion"
@@ -115,7 +114,7 @@ necessary."
                     (length directory)
                     (concat filename directory)))))
       ;; Add our prefix if it's missing
-      (if (excursion-file-p res)
+      (if (excursion--file-p res)
           res
         (concat excursion--prefix res)))))
 
@@ -133,14 +132,14 @@ necessary."
                         "*excursion*"
                         excursion-host
                         excursion-port)))
-          (setq excursion--queue (excursion--queue-create))
           (setq excursion--data "")
           (process-put process 'results nil)
           (set-process-filter process 'excursion--filter)
-          (set-process-sentinel process
-                                (lambda (process event)
-                                  (princ
-                                   (format "Process: %s had the event '%s'" process event))))
+          (set-process-sentinel
+           process
+           (lambda (process event)
+             (princ
+              (format "Process: %s had the event '%s'" process event))))
           process)
       (file-error
        (error "failed to open remote connection: %s" (error-message-string err))))))
@@ -152,15 +151,11 @@ necessary."
     (setq excursion--data (concat excursion--data contents))
     ;; Attempt to read frames from the buffer
     (while-let ((frame (excursion--read-frame))
-                (comp-fn (excursion--queue-dq excursion--queue))
                 (type (cdr (assoc 'type frame)))
                 (data (cdr (assoc 'data frame))))
       (cond ((eq type 'Data)
-             (if (functionp comp-fn)
-                 ;; Call frame completion handler
-                 (funcall comp-fn data)
-               ;; Put results on process
-               (process-put process 'results data)))
+             ;; Put results on process
+             (process-put process 'results data))
             (t (message "ERR received %s: %s " type data))))))
 
 (defun excursion--make-request (request)
@@ -175,11 +170,10 @@ necessary."
     ;; `default-directory' has `/excursion:' as a prefix. Then, as part of that call,
     ;; `open-network-stream' will be called. Somewhere in there `(expand-file-name
     ;; "~/.emacs.d/elisp" "/excursion:whatever")' is called. This, in turn, tries to call
-    ;; `open-network-stream', etc. Could consider limiting this to when `excursion-file-p'
+    ;; `open-network-stream', etc. Could consider limiting this to when `excursion--file-p'
     ;; is true
     (let* ((default-directory nil)
            (process (excursion--remote-connection)))
-      (excursion--queue-nq excursion--queue 'store)
       (process-send-string excursion--process-name request)
       (let ((result nil))
         ;; This blocks hard
@@ -203,7 +197,8 @@ necessary."
 
 ;; Assumes excursion--data points to the start of a frame
 (defun excursion--read-frame ()
-  "Attempt to construct a frame from `excursion--data'. Return as an alist."
+  "Attempt to construct a frame from `excursion--data'. Return as an
+alist or nil if the whole frame hasn't arrived."
   (unless (and (not (null excursion--data))
                (string-empty-p excursion--data))
     ;; Get the frame type, specified data length, and the start and end of the data
@@ -227,28 +222,9 @@ necessary."
   "Use STR to lookup the frame type."
   (cdr (assoc str excursion--frame-types)))
 
-;;; Completion queue
-
-(defun excursion--queue-create ()
-  "Create an empty queue."
-  (list nil))
-
-(defun excursion--queue-nq (q item)
-  "Add ITEM to Q."
-  (setcar q (nconc (car q) (cons item nil))))
-
-(defun excursion--queue-dq (q)
-  "Remove item from Q."
-  (let ((item (car (car q))))
-    (setcar q (cdr (car q)))
-    item))
-
-(defun excursion--queue-len (q)
-  (length q))
-
 ;;; Util
 
-(defun excursion-file-p (file)
+(defun excursion--file-p (file)
   "True is FILE starts with excursion's prefix."
   (string-prefix-p excursion--prefix file))
 
@@ -256,7 +232,8 @@ necessary."
   "Set up BUFFER for FILENAME and inject CONTENTS."
   (with-current-buffer buffer
     (setq buffer-file-name filename)
-    (setq default-directory (concat "/excursion:" (file-name-directory filename)))
+    (setq default-directory (concat excursion--prefix
+                                    (file-name-directory filename)))
     ;; Automatically detect major mode
     (set-auto-mode)
     (insert contents)
