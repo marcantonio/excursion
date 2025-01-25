@@ -1,6 +1,10 @@
-(progn
+;;; -*- lexical-binding: t; -*-
+
+(require 'excursion)
+
+(ert-deftest expand-file-name-test ()
   (excursion-terminate)
-  (let ((pairs
+  (let ((cases
          '((("foo" "bar") "/home/mas/excursion/bar/foo")
            (("/foo" "bar") "/foo")
            (("~/foo" "~ms") "/home/mas/foo")
@@ -48,26 +52,16 @@
            (("~/foo" nil) "/home/mas/foo")
            (("/foo" nil) "/foo")
            (("~foo" nil) "/home/mas/excursion/~foo")
-           (("~mas" nil) "/home/mas")))
-        (count 1))
-    (condition-case err
-        (catch 'done
-          (dolist (pair pairs)
-            (let* ((args (car pair))
-                   (file (car args))
-                   (dir (cadr args))
-                   (remote-result (cadr pair))
-                   (default-directory "/excursion:/home/mas/excursion/")
-                   (local-result (excursion-expand-file-name file dir)))
-              ;;(message ">%s" pair)
-              (when (not (equal local-result (concat "/excursion:" remote-result)))
-                (message ">>>>%d\n  \"%s\" \"%s\"\n  local:  %s\n  remote: %s"
-                         count file dir local-result remote-result)
-                (throw 'done "doneso")))
-            (setq count (1+ count)))
-          'success)
-      (error
-       (message "An error occurred: %s" (error-message-string err))))))
+           (("~mas" nil) "/home/mas"))))
+    (dolist (case cases)
+      (let* ((args (car case))
+             (file (car args))
+             (dir (cadr args))
+             (expected (cadr case))
+             (default-directory "/excursion:/home/mas/excursion/"))
+        (should
+         (equal
+          (excursion-expand-file-name file dir)
+          (concat "/excursion:" expected)))))))
 
-;; (let ((default-directory "/excursion:/home/mas/excursion/"))
-;;   (excursion-expand-file-name "~baz" "~ms"))
+(provide 'expand-file-name-test)
