@@ -1,5 +1,11 @@
 ;;; -*- lexical-binding: t; -*-
 
+;;; connection tests
+;;; macro for tests
+;;; a bug with expand-file-name. Something with ~
+
+(require 'cl-lib)
+
 (defvar excursion-host "localhost")
 (defvar excursion-port 7001)
 (defvar excursion-timeout 2)
@@ -12,7 +18,12 @@
 (defvar excursion--data nil)
 (defvar excursion--prefix "/excursion:")
 
+;; Make sure we are reinserted before tramp so it doesn't try to handle our prefix
 (add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler))
+(with-eval-after-load 'tramp
+  (setq file-name-handler-alist
+        (rassq-delete-all 'excursion-file-handler file-name-handler-alist))
+  (add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler)))
 
 ;;; Commands
 
@@ -53,10 +64,11 @@
         (delete-process process)))))
 
 ;;; File operations
+
 (defun excursion-file-handler (operation &rest args)
   (message "op: %s %s" operation args)
-  (cond ((eq operation 'expand-file-name)
-         (apply #'excursion-expand-file-name args))
+  (cond ((eq operation 'expand-file-name) (apply #'excursion-expand-file-name args))
+        ((eq operation 'file-remote-p) (apply #'excursion-file-remote-p args))
         ;; ((eq operation 'insert-file-contents)
         ;;  (apply operation args))
         (t (let ((inhibit-file-name-handlers
@@ -116,7 +128,20 @@
       ;; Add our prefix if it's missing
       (if (excursion--file-p res)
           res
-        (concat excursion--prefix res)))))
+        (concat (excursion--full-prefix) res)))))
+
+(defun excursion-file-remote-p (filename &optional identification connected)
+  "Excursion's file-remote-p"
+  ;; Only expand if we are connected
+  (let* ((is-connected (excursion--connected-p))
+         (filename (if is-connected (expand-file-name filename) filename)))
+    (when (excursion--file-p filename)
+      ;; If it's not connected, and we care, return nil
+      (when (or is-connected (not connected))
+        ;; Otherwise, parse the file path
+        (cond ((equal identification 'method) "excursion")
+              ((equal identification 'host) (excursion--get-host filename))
+              (t (excursion--full-prefix filename)))))))
 
 ;;; Connection
 
@@ -132,8 +157,9 @@
                         "*excursion*"
                         excursion-host
                         excursion-port)))
-          (setq excursion--data "")
+          (process-put process 'host "electron") ; TODO: make this excursion-host
           (process-put process 'results nil)
+          (setq excursion--data "")
           (set-process-filter process 'excursion--filter)
           (set-process-sentinel
            process
@@ -158,34 +184,8 @@
              (process-put process 'results data))
             (t (message "ERR received %s: %s " type data))))))
 
-(defun excursion--make-request (request)
-  "Send REQUEST to process"
-  (with-timeout (excursion-timeout
-                 (progn
-                   (message "timeout failure")
-                   'timeout))
-    ;; It's important to forget `default-directory' here. Otherwise, we get into a loop
-    ;; when functions like `expand-file-name' are called before everything is loaded. For
-    ;; example, if the first thing you do is call `expand-file-name', and
-    ;; `default-directory' has `/excursion:' as a prefix. Then, as part of that call,
-    ;; `open-network-stream' will be called. Somewhere in there `(expand-file-name
-    ;; "~/.emacs.d/elisp" "/excursion:whatever")' is called. This, in turn, tries to call
-    ;; `open-network-stream', etc. Could consider limiting this to when `excursion--file-p'
-    ;; is true
-    (let* ((default-directory nil)
-           (process (excursion--remote-connection)))
-      (process-send-string excursion--process-name request)
-      (let ((result nil))
-        ;; This blocks hard
-        (while (not result)
-          ;; consider (with-local-quit)
-          (accept-process-output process 0.1 nil t)
-          (setq result (process-get process 'results)))
-        (process-put process 'results nil)
-        result))))
-
 (defun excursion--parse-preamble (frame)
-  "Extract type and ength from FRAME. Returns nil if either is missing."
+  "Extract type and length from FRAME. Returns nil if either is missing."
   (if (string-empty-p frame)
       nil
     (let ((ty (string (aref frame 0))) ; first char as a string
@@ -222,11 +222,79 @@ alist or nil if the whole frame hasn't arrived."
   "Use STR to lookup the frame type."
   (cdr (assoc str excursion--frame-types)))
 
+(defun excursion--make-request (request)
+  "Send REQUEST to process"
+  (with-timeout (excursion-timeout
+                 (progn
+                   (message "timeout failure")
+                   'timeout))
+    ;; It's important to forget `default-directory' here. Otherwise, we get into a loop
+    ;; when functions like `expand-file-name' are called before everything is loaded. For
+    ;; example, if the first thing you do is call `expand-file-name', and
+    ;; `default-directory' has `/excursion::' as a prefix. Then, as part of that call,
+    ;; `open-network-stream' will be called. Somewhere in there `(expand-file-name
+    ;; "~/.emacs.d/elisp" "/excursion::whatever")' is called. This, in turn, tries to call
+    ;; `open-network-stream', etc. Could consider limiting this to when
+    ;; `excursion--file-p' is true. Also note that sequential binding is required here so
+    ;; default-directory is set first.
+    (let* ((default-directory nil)
+           (process (excursion--remote-connection))
+           (result nil))
+      (process-send-string process request)
+      ;; This blocks hard
+      (while (not result)
+        ;; consider (with-local-quit)
+        (accept-process-output process 0.1 nil t)
+        (setq result (process-get process 'results)))
+      (process-put process 'results nil)
+      result)))
+
+(defun excursion--connected-p ()
+  "Checks if the current connection is open"
+  (when-let ((process (get-process excursion--process-name))
+             (process-live-p process)
+             (status (process-status process)))
+    (memq status '(open))))
+
+(defun excursion--get-host (&optional file)
+  "Get the hostname from the connection or FILE if passed. Will
+return nil if no file is passed and there's no connection."
+  (or (excursion--parse-filename file 'host)
+      (when-let ((process (get-process excursion--process-name)))
+        (process-get process 'host))))
+
+(defun excursion--full-prefix (&optional file)
+  "Build the whole remote prefix with the connection string from the
+process or FILE is non-nil."
+  (when-let ((host (excursion--get-host file)))
+    (concat excursion--prefix host ":")))
+
 ;;; Util
 
 (defun excursion--file-p (file)
-  "True is FILE starts with excursion's prefix."
+  "True if FILE starts with excursion's prefix."
   (string-prefix-p excursion--prefix file))
+
+(defun excursion--parse-filename (filename &optional part)
+  "Parse FILENAME and return the method, host, and file as a
+list. PART may be included to just return either the `'method',
+`'host', or `'file' portions.
+
+Will return nil if it's not an excursion file, the prefix
+is malformed, or if PART is unknown."
+  (when (and (not (null filename))
+             (excursion--file-p filename))
+    (save-match-data
+      (let ((re "^/\\([^:]+\\):\\([^:]*\\):\\(.*\\)$"))
+        (when (string-match re filename)
+          (let ((method (match-string 1 filename))
+                (host (match-string 2 filename))
+                (file (match-string 3 filename)))
+            (pcase part
+              ('method method)
+              ('host host)
+              ('file file)
+              ('nil (list method host file)))))))))
 
 (defun excursion--setup-buffer (buffer filename contents)
   "Set up BUFFER for FILENAME and inject CONTENTS."
