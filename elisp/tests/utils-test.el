@@ -5,20 +5,20 @@
 ;; excursion--parse-filename
 (excursion--gen-tests
  excursion--parse-filename
- ((("/foo") nil)
-  (("/excursion:/foo") nil)
+ ((("/foo"))
+  (("/excursion:/foo"))
   (("/excursion:electron:/foo") '("excursion" "electron" "/foo"))
   (("/excursion::/foo") '("excursion" "" "/foo"))
   (("/excursion:electron:") '("excursion" "electron" ""))
   (("/excursion:electron:/" 'method) "excursion")
   (("/excursion:electron:/" 'host) "electron")
   (("/excursion:electron:/" 'file) "/")
-  (("/excursion:electron:/" 'd) nil)))
+  (("/excursion:electron:/" 'd))))
 
 ;; excursion--file-p
 (excursion--gen-tests
  excursion--file-p
- ((("/foo") nil)
+ ((("/foo"))
   (("/excursion:electron:/foo") t)))
 
 (provide 'utils-test)

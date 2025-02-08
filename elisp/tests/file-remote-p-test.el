@@ -19,10 +19,10 @@
  ((("/excursion:electron:main.rs") "/excursion:electron:")
   (("/excursion:electron:main.rs" 'method) "excursion")
   (("/excursion:electron:main.rs" 'host) "electron")
-  (("/excursion:electron:main.rs" 'method t) nil)
-  (("/excursion:electron:main.rs" 'host t) nil)
+  (("/excursion:electron:main.rs" 'method t))
+  (("/excursion:electron:main.rs" 'host t))
   (("/excursion:electron:main.rs" 'foo) "/excursion:electron:")
-  (("/excursion:electron:main.rs" 'foo t) nil))
+  (("/excursion:electron:main.rs" 'foo t)))
  :suffix "not-connected"
  :setup ((excursion-terminate)))
 

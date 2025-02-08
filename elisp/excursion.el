@@ -1,8 +1,7 @@
 ;;; -*- lexical-binding: t; -*-
 
 ;;; connection tests
-;;; macro for tests
-;;; a bug with expand-file-name. Something with ~
+;;; >=28.1 file-name-concat
 
 (require 'cl-lib)
 
@@ -66,7 +65,9 @@
 ;;; File operations
 
 (defun excursion-file-handler (operation &rest args)
-  (message "op: %s %s" operation args)
+  "Excursion's file handler. Will pass OPERATION and ARGS to the
+excursion equivalent or to the orignal handler if not in the
+list."
   (cond ((eq operation 'expand-file-name) (apply #'excursion-expand-file-name args))
         ((eq operation 'file-remote-p) (apply #'excursion-file-remote-p args))
         ;; ((eq operation 'insert-file-contents)
@@ -77,6 +78,17 @@
                              inhibit-file-name-handlers)))
                  (inhibit-file-name-operation operation))
              (apply operation args)))))
+
+(defun excursion--run-stock-handler (operation args)
+  "Run OPERATION on ARGS via the default file handler."
+  (let ((inhibit-file-name-handlers
+         ;; Inhibit tramp too. Not sure if this is right, but it will error on excursion
+         ;; being an unknown method
+         (append '(excursion-file-handler tramp-file-name-handler)
+                 (and (eq inhibit-file-name-operation operation)
+                      inhibit-file-name-handlers)))
+        (inhibit-file-name-operation operation))
+    (apply operation args)))
 
 (defun excursion-insert-file-contents (filename &optional visit beg end replace)
   (let* ((path (excursion-expand-file-name filename))
@@ -101,34 +113,48 @@
 ;;       (goto-char (point-min)))
 ;;     (switch-to-buffer buffer)))
 
+;; This does more than tramp's expand-file-name. Specifically, it will remotely expand all
+;; tildes if explicitly asked, i.e., via a prefix
 (defun excursion-expand-file-name (filename &optional directory)
   "Excursion's expand-file-name"
-  (let ((directory
-         ;; First fix up the directory. The remote handles all expansions, but we can make
-         ;; sure the directory and default-directory are right first
-         (cond ((and
-                 (null directory)
-                 (not (string-prefix-p "/" filename))) default-directory)
-               ((or
-                 (string-prefix-p "/" filename)
-                 (string-prefix-p "~/" filename)) "")
-               ((or
-                 (string-prefix-p "~" filename)
-                 (string-prefix-p "~" directory)) directory)
-               ((not (string-prefix-p "/" directory))
-                (concat default-directory directory))
-               (t directory))))
-    ;; Make the request
-    (let ((res
-           (excursion--make-request
-            (format "*%s;%s|%s"
-                    (length filename)
-                    (length directory)
-                    (concat filename directory)))))
-      ;; Add our prefix if it's missing
-      (if (excursion--file-p res)
-          res
-        (concat (excursion--full-prefix) res)))))
+  (let* ((parts (excursion--split-prefix filename))
+         (prefix (car parts))
+         (filepath (cdr parts))
+         (expanded-file
+          (cond
+           ;; If there is no prefix and it's absolute, treat it as a local file
+           ((and (not prefix)
+                 (file-name-absolute-p filepath))
+            (excursion--run-stock-handler #'expand-file-name (list filepath)))
+           ;; If we have a prefix and a possible absolute name, treat it as a remote file
+           ((and (or (string-prefix-p "/" filepath)
+                     (string-prefix-p "~" filepath))
+                 (not (null prefix)))
+            (excursion--run-stock-handler
+             #'expand-file-name
+             (list
+              ;; Even though it's remote, we are going to expand it here. Only go remote
+              ;; for tilde expansion
+              (if (string-prefix-p "~" filepath)
+                  (excursion--make-request
+                   (format "*%s;%s|%s"
+                           (length filepath)
+                           (length directory) ; no longer needed
+                           (concat filepath directory)))
+                filepath))))
+           ;; In the final case, we just fix up the directory and prepend it
+           (t (let ((directory
+                     (if directory
+                         (expand-file-name directory)
+                       default-directory)))
+                (file-name-concat directory filepath))))))
+    ;; File is expanded, but we might need to re-add the prefix
+    (if (excursion--file-p expanded-file)
+        ;; Make sure there's no extraneous slash
+        (if (string-suffix-p "/" expanded-file)
+            (substring expanded-file 0 -1)
+          expanded-file)
+      (concat prefix expanded-file))))
 
 (defun excursion-file-remote-p (filename &optional identification connected)
   "Excursion's file-remote-p"
@@ -270,6 +296,15 @@ process or FILE is non-nil."
     (concat excursion--prefix host ":")))
 
 ;;; Util
+
+(defun excursion--split-prefix (str)
+  "Splits STR into a prefix and filepath and returns them as a
+cons. The car will be `nil' if there's no prefix."
+  (save-match-data
+    (if (string-match "^/excursion:[^:]+:" str)
+        (let ((prefix (match-string 0 str)))
+          (cons prefix (substring str (match-end 0))))
+      (cons nil str))))
 
 (defun excursion--file-p (file)
   "True if FILE starts with excursion's prefix."
