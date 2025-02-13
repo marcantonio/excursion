@@ -4,16 +4,14 @@
 ;;; >=28.1 file-name-concat
 
 (require 'cl-lib)
+(require 'excursion-frame)
 
 (defvar excursion-host "localhost")
 (defvar excursion-port 7001)
 (defvar excursion-timeout 2)
 
 (defconst excursion--process-name "excursion")
-(defconst excursion--frame-types '(("^" . Data)
-                                   ("!" . Err)
-                                   ("(" . Open)
-                                   ("&"  . Save)))
+
 (defvar excursion--data nil)
 (defvar excursion--prefix "/excursion:")
 
@@ -139,7 +137,7 @@ list."
                   (excursion--make-request
                    (format "*%s;%s|%s"
                            (length filepath)
-                           (length directory) ; no longer needed
+                           (length directory) ; TODO: remove
                            (concat filepath directory)))
                 filepath))))
            ;; In the final case, we just fix up the directory and prepend it
@@ -203,23 +201,26 @@ list."
     (setq excursion--data (concat excursion--data contents))
     ;; Attempt to read frames from the buffer
     (while-let ((frame (excursion--read-frame))
-                (type (cdr (assoc 'type frame)))
-                (data (cdr (assoc 'data frame))))
+                (type (excursion--frame-type frame))
+                (data (excursion--frame-data frame)))
       (cond ((eq type 'Data)
              ;; Put results on process
              (process-put process 'results data))
             (t (message "ERR received %s: %s " type data))))))
 
-(defun excursion--parse-preamble (frame)
-  "Extract type and length from FRAME. Returns nil if either is missing."
-  (if (string-empty-p frame)
-      nil
-    (let ((ty (string (aref frame 0))) ; first char as a string
-          (delim-pos (cl-position ?| frame))) ; index of `|'
-      (if (and delim-pos (> delim-pos 1))
-          (let ((len (substring frame 1 delim-pos)))
-            (list ty len (+ delim-pos 1)))
-        nil))))
+(defun excursion--parse-preamble (data)
+  "Extract type, lengths and payload offset from DATA. Returns nil
+if any part is missing or invalid."
+  (unless (string-empty-p data)
+    (let* ((type (aref data 0)) ; first char as type
+           (delim-pos (cl-position ?| data))) ; index of `|'
+      (when (and delim-pos (> delim-pos 1))
+        ;; Split the len field by `;', sum, and return the sum and the lengths
+        (let* ((len-str (substring data 1 delim-pos))
+               (seg-lens (mapcar #'string-to-number
+                                 (split-string len-str ";")))
+               (len (apply '+ seg-lens)))
+          (list type len seg-lens (+ delim-pos 1)))))))
 
 ;; Assumes excursion--data points to the start of a frame
 (defun excursion--read-frame ()
@@ -228,25 +229,20 @@ alist or nil if the whole frame hasn't arrived."
   (unless (and (not (null excursion--data))
                (string-empty-p excursion--data))
     ;; Get the frame type, specified data length, and the start and end of the data
-    (let ((preamble (excursion--parse-preamble excursion--data)))
-      (when (not (null preamble))
-        (let* ((type (excursion--get-frame-type (car preamble)))
-               (data-len (string-to-number (cadr preamble)))
-               (data-start (caddr preamble))
-               (data-end (+ data-start data-len)))
-          ;; Make sure there is a least enough for one frame
-          (when (>= (length excursion--data) data-end)
-            (let ((data (substring excursion--data data-start data-end)))
-              ;; Truncate over the old data
-              (setq excursion--data (substring excursion--data data-end))
-              ;; Return as an alist
-              `((type . ,type)
-                (data-len . ,data-len)
-                (data . ,data)))))))))
-
-(defun excursion--get-frame-type (str)
-  "Use STR to lookup the frame type."
-  (cdr (assoc str excursion--frame-types)))
+    (when-let
+        ((preamble (excursion--parse-preamble excursion--data))
+         (type-char (car preamble))
+         (data-len (cadr preamble))
+         (segment-lens (caddr preamble))
+         (data-start (cadddr preamble))
+         (data-end (+ data-start data-len)))
+      ;; Make sure there is a least enough for one frame
+      (when (>= (length excursion--data) data-end)
+        (let ((data (substring excursion--data data-start data-end)))
+          ;; Truncate over the old data
+          (setq excursion--data (substring excursion--data data-end))
+          ;; Make a new frame
+          (excursion--frame-create-from type-char segment-lens data))))))
 
 (defun excursion--make-request (request)
   "Send REQUEST to process"
@@ -354,5 +350,5 @@ is malformed, or if PART is unknown."
 ;;   (excursion-open-remote-file "./Cargo.toml")
 ;;   (excursion-open-remote-file "./scripts/nc_test.bash")
 ;;   (excursion-open-remote-directory "/home/mas"))
-
+;; (excursion-expand-file-name "/excursion:electron:~/otium")
 (provide 'excursion)
