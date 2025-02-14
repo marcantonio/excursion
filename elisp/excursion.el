@@ -3,6 +3,8 @@
 ;;; connection tests
 ;;; >=28.1 file-name-concat
 
+(add-to-list 'load-path (file-name-directory (or load-file-name (buffer-file-name))))
+
 (require 'cl-lib)
 (require 'excursion-frame)
 
