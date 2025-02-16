@@ -169,6 +169,32 @@ list."
               ((equal identification 'host) (excursion--get-host filename))
               (t (excursion--full-prefix filename)))))))
 
+(defun excursion-file-attributes (filename &optional id-format)
+  "Excursion's file-attributes"
+  (let* ((filepath (expand-file-name
+                    (cdr (excursion--split-prefix filename))))
+         (result (excursion--make-request
+                  (format ":%s|%s"
+                          (length filepath)
+                          filepath))))
+    (list (or (string-prefix-p "d" (nth 7 result)) ; is dir or symlink
+              (and (string-prefix-p "l" (nth 7 result))
+                   (nth 10 result)))
+          (string-to-number (nth 0 result))                   ; num links
+          (string-to-number (nth 1 result))                   ; uid
+          (string-to-number (nth 2 result))                   ; gid
+          (seconds-to-time (string-to-number (nth 3 result))) ; atime
+          (seconds-to-time (string-to-number (nth 4 result))) ; mtime
+          (seconds-to-time (string-to-number (nth 5 result))) ; ctime
+          (string-to-number (nth 6 result))                   ; size
+          (nth 7 result)                                      ; mode string
+          nil                                                 ; unused
+          (string-to-number (nth 8 result))                   ; inode
+          ;; TODO: This is the actual remote device id which might not be unique. Tramp
+          ;; uses -1 plus a unique integer. I don't want to overthink this for now, but
+          ;; there's more we can when this is an issue
+          (cons -2 (string-to-number (nth 9 result))))))      ; device id
+
 ;;; Connection
 
 (defun excursion--remote-connection ()
@@ -197,7 +223,9 @@ list."
        (error "failed to open remote connection: %s" (error-message-string err))))))
 
 (defun excursion--filter (process contents)
-  "Handle all output from the socket."
+  "Reads frames from CONTENTS. Can process multiple in one call. The
+results of are put onto PROCESS and may be a list or a scalar
+depending on the call."
   (when (buffer-live-p (process-buffer process))
     ;; Append all data to excursion--data
     (setq excursion--data (concat excursion--data contents))
@@ -206,8 +234,17 @@ list."
                 (type (excursion--frame-type frame))
                 (data (excursion--frame-data frame)))
       (cond ((eq type 'Data)
-             ;; Put results on process
-             (process-put process 'results data))
+             (let ((segments nil)
+                   (i 0))
+               ;; Build up a list of segments
+               (while-let ((segment (excursion--frame-get-segment frame i)))
+                 (push segment segments)
+                 (cl-incf i))
+               ;; Put results on process. If there's only 1 element, just return that
+               (process-put process 'results
+                            (if (equal (length segments) 1)
+                                (car segments)
+                              (nreverse segments)))))
             (t (message "ERR received %s: %s " type data))))))
 
 (defun excursion--parse-preamble (data)

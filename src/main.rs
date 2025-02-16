@@ -1,7 +1,12 @@
 use std::fs;
+use std::fs::read_link;
 use std::io;
+use std::os::linux::fs::MetadataExt;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::path::PathBuf;
 
 use tokio::{
     fs::File,
@@ -51,7 +56,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
     while let Some(frame) = connection.read_frame().await? {
         use frame::FrameType::*;
 
-        println!("frame type: {}", frame.ty);
+        println!("frame type: {:?}", frame.ty);
 
         let segments =
             frame.iter_segments().map(|s| std::str::from_utf8(s).unwrap_or("")).collect::<Vec<_>>();
@@ -61,6 +66,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
             FileExists => handle_file_exists(&mut connection, &segments[0]).await?,
             Open => handle_open(&mut connection, &segments[0]).await?,
             Save => todo!(),
+            Stat => handle_stat(&mut connection, &segments[0]).await?,
             _ => unimplemented!(),
         }
     }
@@ -120,4 +126,77 @@ async fn open_file(filename: &str) -> Result<String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents).await?;
     Ok(contents)
+}
+
+#[derive(Debug)]
+struct StatResult {
+    nlinks: u64,
+    uid: u32,
+    gid: u32,
+    atime: (i64, i64),
+    mtime: (i64, i64),
+    ctime: (i64, i64),
+    size: u64,
+    mode: u32,
+    inode: u64,
+    dev: u64,
+    target: Option<PathBuf>,
+}
+
+impl StatResult {
+    fn from_metadata(m: fs::Metadata, target: Option<PathBuf>) -> Self {
+        Self {
+            nlinks: m.st_nlink(),
+            uid: m.st_uid(),
+            gid: m.st_gid(),
+            atime: (m.atime(), m.atime_nsec()),
+            mtime: (m.mtime(), m.mtime_nsec()),
+            ctime: (m.ctime(), m.ctime_nsec()),
+            size: m.len(),
+            mode: m.permissions().mode(),
+            inode: m.ino(),
+            dev: m.dev(),
+            target,
+        }
+    }
+
+    fn to_frame_data(&self) -> (String, Vec<usize>) {
+        let mut fields = vec![
+            self.nlinks.to_string(),
+            self.uid.to_string(),
+            self.gid.to_string(),
+            format!("{}.{}", self.atime.0, self.atime.1),
+            format!("{}.{}", self.mtime.0, self.mtime.1),
+            format!("{}.{}", self.ctime.0, self.ctime.1),
+            self.size.to_string(),
+            unix_mode::to_string(self.mode),
+            self.inode.to_string(),
+            self.dev.to_string(),
+        ];
+
+        if let Some(target) = &self.target {
+            fields.push(target.to_string_lossy().to_string());
+        }
+
+        let payload = fields.join("");
+        let lengths = fields.iter().map(|s| s.len()).collect();
+
+        (payload, lengths)
+    }
+}
+
+async fn handle_stat<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
+) -> Result<()> {
+    let path = Path::new(filename);
+
+    match fs::symlink_metadata(path) {
+        Ok(m) => {
+            let symlink_target = if m.is_symlink() { Some(read_link(path)?) } else { None };
+            let res = StatResult::from_metadata(m, symlink_target);
+            let (payload, lengths) = res.to_frame_data();
+            connection.write_frame(Frame::new(FrameType::Data, payload.as_bytes(), &lengths)).await
+        },
+        Err(_) => todo!(),
+    }
 }

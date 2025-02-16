@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct Frame {
     pub ty: FrameType,
     pub payload: Vec<u8>,
@@ -46,9 +46,18 @@ impl Frame {
 
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lengths = self.segment_lens.iter().map(|&n| n.to_string()).collect::<Vec<_>>().join(";");
+        let data = String::from_utf8(self.payload.iter().cloned().collect::<Vec<_>>()).unwrap();
+        write!(f, "{}{}|{}", self.ty, lengths, data)
+    }
+}
+
+impl Debug for Frame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lengths = self.segment_lens.iter().map(|&n| n.to_string()).collect::<Vec<_>>().join(";");
         let sub = self.payload.iter().cloned().take(8).collect::<Vec<_>>();
         let data_str = String::from_utf8_lossy(&sub).replace('\n', "\\n");
-        write!(f, "<{}, {}, {}...>", self.ty, self.payload_len, data_str)
+        write!(f, "<{:?}, {}, {}, {}...>", self.ty, self.payload_len, lengths, data_str)
     }
 }
 
@@ -61,9 +70,9 @@ pub enum FrameType {
     FileExists,
     Open,
     Save,
+    Stat,
 }
 
-// Convert `u8` into a `Command` or fail
 impl TryFrom<u8> for FrameType {
     type Error = &'static str;
 
@@ -75,13 +84,28 @@ impl TryFrom<u8> for FrameType {
             b'*' => Ok(Self::ExpandFileName),
             b'(' => Ok(Self::Open),
             b'&' => Ok(Self::Save),
-            _ => Err("invalid command"),
+            b':' => Ok(Self::Stat),
+            b'!' => Ok(Self::Err),
+            _ => Err("invalid FrameType"),
         }
     }
 }
 
 impl Display for FrameType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Data => '^',
+                Self::DirList => '~',
+                Self::FileExists => '?',
+                Self::ExpandFileName => '*',
+                Self::Open => '(',
+                Self::Save => '&',
+                Self::Stat => ':',
+                Self::Err => '!',
+            }
+        )
     }
 }

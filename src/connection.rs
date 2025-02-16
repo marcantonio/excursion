@@ -126,13 +126,14 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
 
     pub async fn write_frame(&mut self, frame: Frame) -> Result<()> {
         use FrameType::*;
+
         match frame.ty {
             Data => {
-                self.tx.write_u8(b'^').await?;
-                self.tx.write_all(format!("{}|", frame.payload_len).as_bytes()).await?;
-                self.tx.write_all(&frame.payload).await?;
+                self.tx.write_all(format!("{}", frame).as_bytes()).await?;
             },
             Err => {
+                // TODO: Left this variant the old way because I need to go back and look
+                // at why I was OK with multiple writes
                 self.tx.write_u8(b'!').await?;
                 self.tx.write_all(format!("{}|", frame.payload_len).as_bytes()).await?;
                 self.tx.write_all(&frame.payload).await?;
@@ -253,9 +254,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert_eq!(frame, Frame::new(FrameType::Save, b"testdata", &[8]));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert_eq!(frame, Frame::new(FrameType::Save, b"testdata", &[8]));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed preamble or connection reset by peer"));
     }
