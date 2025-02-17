@@ -3,11 +3,11 @@
 ;;; >=28.1 file-name-concat
 ;;; Revisit multiple frames and remove excursion--data
 
+;; For dev
 (let* ((excursion-path (file-name-directory (or load-file-name (buffer-file-name))))
        (excursion-test-path (concat excursion-path "tests/")))
   (add-to-list 'load-path excursion-path)
   (add-to-list 'load-path excursion-test-path))
-
 
 (require 'cl-lib)
 (require 'excursion-frame)
@@ -75,8 +75,11 @@ list."
   (cond ((eq operation 'expand-file-name) (apply #'excursion-expand-file-name args))
         ((eq operation 'file-remote-p) (apply #'excursion-file-remote-p args))
         ((eq operation 'file-attributes) (apply #'excursion-file-attributes args))
-        ;; ((eq operation 'insert-file-contents)
-        ;;  (apply operation args))
+        ((eq operation 'file-symlink-p) (apply #'excursion-file-symlink-p args))
+        ((eq operation 'directory-file-name) (apply #'excursion-directory-file-name args))
+        ((eq operation 'file-name-as-directory) (apply #'excursion-file-name-as-directory args))
+        ((eq operation 'file-name-nondirectory) (apply #'excursion-file-name-nondirectory args))
+        ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
         (t (let ((inhibit-file-name-handlers
                   (cons 'excursion-file-handler
                         (and (eq inhibit-file-name-operation operation)
@@ -128,13 +131,13 @@ list."
          (expanded-file
           (cond
            ;; If there is no prefix and it's absolute, treat it as a local file
-           ((and (not prefix)
+           ((and (string-empty-p prefix)
                  (file-name-absolute-p filepath))
             (excursion--run-stock-handler #'expand-file-name (list filepath)))
            ;; If we have a prefix and a possible absolute name, treat it as a remote file
            ((and (or (string-prefix-p "/" filepath)
                      (string-prefix-p "~" filepath))
-                 (not (null prefix)))
+                 (not (string-empty-p prefix)))
             (excursion--run-stock-handler
              #'expand-file-name
              (list
@@ -199,6 +202,36 @@ list."
           ;; uses -1 plus a unique integer. I don't want to overthink this for now, but
           ;; there's more we can when this is an issue
           (cons -2 (string-to-number (nth 9 result))))))      ; device id
+
+(defun excursion-file-symlink-p (filename)
+  "Excursion's file-symlink-p."
+  (let ((f (file-attribute-type (file-attributes filename))))
+    (and (stringp f) f)))
+
+(defun excursion-directory-file-name (dirname)
+  "Excursion's directory-file-name"
+  (let* ((parts (excursion--split-prefix dirname))
+         (prefix (car parts))
+         (filepath (cdr parts)))
+    (concat prefix (excursion--run-stock-handler
+                    #'directory-file-name (list filepath)))))
+
+(defun excursion-file-name-as-directory (filename)
+  "Excursion's file-name-as-directory."
+  (let* ((parts (excursion--split-prefix filename))
+         (prefix (car parts))
+         (filepath (cdr parts)))
+    (concat prefix (excursion--run-stock-handler
+                    #'file-name-as-directory (list filepath)))))
+
+(defun excursion-file-name-nondirectory (filename)
+  "Excursion's file-name-nondirectory."
+  (let* ((parts (excursion--split-prefix filename)))
+    (excursion--run-stock-handler #'file-name-nondirectory (list (cdr parts)))))
+
+(defun excursion-file-name-case-insensitive-p (filename)
+  "Excursion's file-name-case-insensitive-p."
+  nil)
 
 ;;; Connection
 
@@ -344,7 +377,7 @@ cons. The car will be `nil' if there's no prefix."
     (if (string-match "^/excursion:[^:]+:" str)
         (let ((prefix (match-string 0 str)))
           (cons prefix (substring str (match-end 0))))
-      (cons nil str))))
+      (cons "" str))))
 
 (defun excursion--file-p (file)
   "True if FILE starts with excursion's prefix."
