@@ -39,6 +39,7 @@ Named args:
 
 (require 'connection-test)
 (require 'expand-file-name-test)
+(require 'file-attributes-test)
 (require 'file-remote-p-test)
 (require 'frame-test)
 (require 'utils-test)

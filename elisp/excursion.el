@@ -1,7 +1,7 @@
 ;;; -*- lexical-binding: t; -*-
 
-;;; connection tests
 ;;; >=28.1 file-name-concat
+;;; Revisit multiple frames and remove excursion--data
 
 (add-to-list 'load-path (file-name-directory (or load-file-name (buffer-file-name))))
 
@@ -70,6 +70,7 @@ excursion equivalent or to the orignal handler if not in the
 list."
   (cond ((eq operation 'expand-file-name) (apply #'excursion-expand-file-name args))
         ((eq operation 'file-remote-p) (apply #'excursion-file-remote-p args))
+        ((eq operation 'file-attributes) (apply #'excursion-file-attributes args))
         ;; ((eq operation 'insert-file-contents)
         ;;  (apply operation args))
         (t (let ((inhibit-file-name-handlers
