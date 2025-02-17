@@ -3,7 +3,11 @@
 ;;; >=28.1 file-name-concat
 ;;; Revisit multiple frames and remove excursion--data
 
-(add-to-list 'load-path (file-name-directory (or load-file-name (buffer-file-name))))
+(let* ((excursion-path (file-name-directory (or load-file-name (buffer-file-name))))
+       (excursion-test-path (concat excursion-path "tests/")))
+  (add-to-list 'load-path excursion-path)
+  (add-to-list 'load-path excursion-test-path))
+
 
 (require 'cl-lib)
 (require 'excursion-frame)
