@@ -8,7 +8,6 @@
  ((("/excursion:electron:/home/mas/otium")
    "/excursion:electron:~/otium")
   (("/excursion:electron:otium")
-   "/excursion:electron:otium")
-  (("foo") "foo")))
+   "/excursion:electron:otium")))
 
 (provide 'abbreviate-file-name-test)

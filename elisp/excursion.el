@@ -1,6 +1,8 @@
 ;;; -*- lexical-binding: t; -*-
 
 ;;; >=28.1 file-name-concat
+;;; >=29.1 directory-abbrev-apply
+;;; Revisit expand-file-name
 ;;; Revisit multiple frames and remove excursion--data
 ;;; Add initial cache call
 
@@ -68,6 +70,17 @@
         (delete-process process)))))
 
 ;;; File operations
+
+;; verify-visited-file-modtime
+;; file-exists-p
+;; file-name-directory
+;; substitute-in-file-name
+;; load
+;; file-directory-p
+;; get-file-buffer
+;; file-truename
+;; file-name-sans-versions
+;; file-name-all-completions
 
 (defun excursion-file-handler (operation &rest args)
   "Excursion's file handler. Will pass OPERATION and ARGS to the
@@ -182,29 +195,31 @@ list."
 
 (defun excursion-file-attributes (filename &optional id-format)
   "Excursion's file-attributes"
-  (let* ((filepath (expand-file-name
-                    (cdr (excursion--split-prefix filename))))
+  (let* ((filepath (cdr (excursion--split-prefix
+                         (expand-file-name filename))))
          (result (excursion--make-request
                   (format ":%s|%s"
                           (length filepath)
                           filepath))))
-    (list (or (string-prefix-p "d" (nth 7 result)) ; is dir or symlink
-              (and (string-prefix-p "l" (nth 7 result))
-                   (nth 10 result)))
-          (string-to-number (nth 0 result))                   ; num links
-          (string-to-number (nth 1 result))                   ; uid
-          (string-to-number (nth 2 result))                   ; gid
-          (seconds-to-time (string-to-number (nth 3 result))) ; atime
-          (seconds-to-time (string-to-number (nth 4 result))) ; mtime
-          (seconds-to-time (string-to-number (nth 5 result))) ; ctime
-          (string-to-number (nth 6 result))                   ; size
-          (nth 7 result)                                      ; mode string
-          nil                                                 ; unused
-          (string-to-number (nth 8 result))                   ; inode
-          ;; TODO: This is the actual remote device id which might not be unique. Tramp
-          ;; uses -1 plus a unique integer. I don't want to overthink this for now, but
-          ;; there's more we can when this is an issue
-          (cons -2 (string-to-number (nth 9 result))))))      ; device id
+    ;; Parse unless it's an empty string, which indicates file not found
+    (unless (and (stringp result) (string-empty-p result))
+      (list (or (string-prefix-p "d" (nth 7 result)) ; is dir or symlink
+                (and (string-prefix-p "l" (nth 7 result))
+                     (nth 10 result)))
+            (string-to-number (nth 0 result))                   ; num links
+            (string-to-number (nth 1 result))                   ; uid
+            (string-to-number (nth 2 result))                   ; gid
+            (seconds-to-time (string-to-number (nth 3 result))) ; atime
+            (seconds-to-time (string-to-number (nth 4 result))) ; mtime
+            (seconds-to-time (string-to-number (nth 5 result))) ; ctime
+            (string-to-number (nth 6 result))                   ; size
+            (nth 7 result)                                      ; mode string
+            nil                                                 ; unused
+            (string-to-number (nth 8 result))                   ; inode
+            ;; TODO: This is the actual remote device id which might not be unique. Tramp
+            ;; uses -1 plus a unique integer. I don't want to overthink this for now, but
+            ;; there's more we can when this is an issue
+            (cons -2 (string-to-number (nth 9 result)))))))      ; device id
 
 (defun excursion-file-symlink-p (filename)
   "Excursion's file-symlink-p."
@@ -254,6 +269,19 @@ list."
       (setq filepath (concat "~/" (substring filepath (length home-dir)))))
     (concat prefix
             (excursion--run-stock-handler #'directory-abbrev-apply (list filepath)))))
+
+;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
+;; XXX: Write tests after you fix expand-file-name
+(defun excursion-file-readable-p (filename)
+  "Excursion's file-readable-p"
+  (let* ((parts (excursion--split-prefix (expand-file-name filename)))
+         (prefix (car parts))
+         (filepath (cdr parts))
+         (result (excursion--make-request
+                  (format "_%s;1|%sr"
+                          (length filepath)
+                          filepath))))
+    (string= result "1")))
 
 ;;; Connection
 
@@ -305,13 +333,14 @@ depending on the call."
                             (if (equal (length segments) 1)
                                 (car segments)
                               (nreverse segments)))))
-            (t (message "ERR received %s: %s " type data))))))
+            ((eq type 'Err) (error data))
+            (t (error "Error: unexpected frame received %s: %s " type data))))))
 
 (defun excursion--parse-preamble (data)
   "Extract type, lengths and payload offset from DATA. Returns nil
 if any part is missing or invalid."
   (unless (string-empty-p data)
-    (let* ((type (aref data 0)) ; first char as type
+    (let* ((type (aref data 0))               ; first char as type
            (delim-pos (cl-position ?| data))) ; index of `|'
       (when (and delim-pos (> delim-pos 1))
         ;; Split the len field by `;', sum, and return the sum and the lengths
@@ -362,17 +391,16 @@ alist or nil if the whole frame hasn't arrived."
            (process (excursion--remote-connection)))
       (process-send-string process request)
       ;; This blocks hard
-      (let ((result (excursion--wait-for-data process)))
-        (process-put process 'results nil)
-        result))))
+      (excursion--wait-for-data process))))
 
 (defun excursion--wait-for-data (process)
-  (let ((result))
-    (while (not result)
+  (let (results)
+    (while (not results)
       ;; consider (with-local-quit)
       (accept-process-output process 0.1 nil t)
-      (setq result (process-get process 'results)))
-    result))
+      (setq results (process-get process 'results)))
+    (process-put process 'results nil) ; clear 'results
+    results))
 
 (defun excursion--connected-p ()
   "Checks if the current connection is open"

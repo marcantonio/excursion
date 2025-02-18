@@ -67,10 +67,10 @@ pub enum FrameType {
     DirList,
     Err,
     ExpandFileName,
-    FileExists,
     Open,
     Save,
     Stat,
+    Stat2,
 }
 
 impl TryFrom<u8> for FrameType {
@@ -80,11 +80,11 @@ impl TryFrom<u8> for FrameType {
         match value {
             b'^' => Ok(Self::Data),
             b'~' => Ok(Self::DirList),
-            b'?' => Ok(Self::FileExists),
             b'*' => Ok(Self::ExpandFileName),
             b'(' => Ok(Self::Open),
             b'&' => Ok(Self::Save),
             b':' => Ok(Self::Stat),
+            b'_' => Ok(Self::Stat2),
             b'!' => Ok(Self::Err),
             _ => Err("invalid FrameType"),
         }
@@ -99,11 +99,11 @@ impl Display for FrameType {
             match self {
                 Self::Data => '^',
                 Self::DirList => '~',
-                Self::FileExists => '?',
                 Self::ExpandFileName => '*',
                 Self::Open => '(',
                 Self::Save => '&',
                 Self::Stat => ':',
+                Self::Stat2 => '_',
                 Self::Err => '!',
             }
         )

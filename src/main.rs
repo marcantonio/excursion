@@ -63,10 +63,10 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
         match frame.ty {
             DirList => handle_dir_list(&mut connection, &segments[0]).await?,
             ExpandFileName => handle_expand_file_name(&mut connection, &segments).await?,
-            FileExists => handle_file_exists(&mut connection, &segments[0]).await?,
             Open => handle_open(&mut connection, &segments[0]).await?,
             Save => todo!(),
             Stat => handle_stat(&mut connection, &segments[0]).await?,
+            Stat2 => handle_stat2(&mut connection, &segments).await?,
             _ => unimplemented!(),
         }
     }
@@ -85,14 +85,6 @@ async fn handle_expand_file_name<'a>(
     let expanded = expanduser::expanduser(&file).unwrap_or_else(|_| Path::new(file).to_path_buf());
     let path = expanded.into_os_string();
     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
-}
-
-async fn handle_file_exists<'a>(
-    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
-) -> Result<()> {
-    let path = Path::new(filename);
-    let exists = if path.exists() { "1" } else { "0" };
-    connection.write_frame(Frame::new(FrameType::Data, exists.as_bytes(), &[1])).await
 }
 
 async fn handle_dir_list<'a>(
@@ -189,7 +181,6 @@ async fn handle_stat<'a>(
     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
 ) -> Result<()> {
     let path = Path::new(filename);
-
     match fs::symlink_metadata(path) {
         Ok(m) => {
             let symlink_target = if m.is_symlink() { Some(read_link(path)?) } else { None };
@@ -197,6 +188,34 @@ async fn handle_stat<'a>(
             let (payload, lengths) = res.to_frame_data();
             connection.write_frame(Frame::new(FrameType::Data, payload.as_bytes(), &lengths)).await
         },
-        Err(_) => todo!(),
+        Err(e) => match e.kind() {
+            io::ErrorKind::NotFound => connection.write_frame(Frame::new(FrameType::Data, &[], &[0])).await,
+            e => {
+                let err_msg = e.to_string();
+                println!("error: {}", err_msg);
+                connection.write_frame(Frame::new(FrameType::Err, err_msg.as_bytes(), &[err_msg.len()])).await
+            },
+        },
     }
+}
+
+async fn handle_stat2<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
+) -> Result<()> {
+    let [filename, ask]: [&str; 2] = params.try_into().map_err(|_| "handle_stat2: bad segment")?;
+    let path = Path::new(filename);
+    let p = if match ask {
+        "e" => path.exists(),
+        "r" => {
+            let m = fs::read_dir(path).is_ok();
+            println!("{}", m);
+            m
+        },
+        _ => todo!(),
+    } {
+        "1"
+    } else {
+        "0"
+    };
+    connection.write_frame(Frame::new(FrameType::Data, p.as_bytes(), &[1])).await
 }
