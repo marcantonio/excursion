@@ -2,6 +2,7 @@
 
 ;;; >=28.1 file-name-concat
 ;;; Revisit multiple frames and remove excursion--data
+;;; Add initial cache call
 
 ;; For dev
 (let* ((excursion-path (file-name-directory (or load-file-name (buffer-file-name))))
@@ -72,20 +73,22 @@
   "Excursion's file handler. Will pass OPERATION and ARGS to the
 excursion equivalent or to the orignal handler if not in the
 list."
-  (cond ((eq operation 'expand-file-name) (apply #'excursion-expand-file-name args))
-        ((eq operation 'file-remote-p) (apply #'excursion-file-remote-p args))
-        ((eq operation 'file-attributes) (apply #'excursion-file-attributes args))
-        ((eq operation 'file-symlink-p) (apply #'excursion-file-symlink-p args))
-        ((eq operation 'directory-file-name) (apply #'excursion-directory-file-name args))
-        ((eq operation 'file-name-as-directory) (apply #'excursion-file-name-as-directory args))
-        ((eq operation 'file-name-nondirectory) (apply #'excursion-file-name-nondirectory args))
-        ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
-        (t (let ((inhibit-file-name-handlers
-                  (cons 'excursion-file-handler
-                        (and (eq inhibit-file-name-operation operation)
-                             inhibit-file-name-handlers)))
-                 (inhibit-file-name-operation operation))
-             (apply operation args)))))
+  (cond
+   ((eq operation 'expand-file-name) (apply #'excursion-expand-file-name args))
+   ((eq operation 'file-remote-p) (apply #'excursion-file-remote-p args))
+   ((eq operation 'file-attributes) (apply #'excursion-file-attributes args))
+   ((eq operation 'file-symlink-p) (apply #'excursion-file-symlink-p args))
+   ((eq operation 'directory-file-name) (apply #'excursion-directory-file-name args))
+   ((eq operation 'file-name-as-directory) (apply #'excursion-file-name-as-directory args))
+   ((eq operation 'file-name-nondirectory) (apply #'excursion-file-name-nondirectory args))
+   ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
+   ((eq operation 'abbreviate-file-name) (apply #'excursion-abbreviate-file-name args))
+   (t (let ((inhibit-file-name-handlers
+             (cons 'excursion-file-handler
+                   (and (eq inhibit-file-name-operation operation)
+                        inhibit-file-name-handlers)))
+            (inhibit-file-name-operation operation))
+        (apply operation args)))))
 
 (defun excursion--run-stock-handler (operation args)
   "Run OPERATION on ARGS via the default file handler."
@@ -233,6 +236,25 @@ list."
   "Excursion's file-name-case-insensitive-p."
   nil)
 
+(defun excursion-abbreviate-file-name (filename)
+  "Excusions's abbreviate-file-name."
+  (let* ((case-fold-search ; for `directory-abbrev-apply'
+          (file-name-case-insensitive-p filename))
+         (parts (excursion--split-prefix filename))
+         (prefix (car parts))
+         (filepath (cdr parts))
+         (home-dir (concat
+                    (cdr (excursion--split-prefix
+                          (excursion-expand-file-name
+                           (concat prefix "~")))) "/")))
+    (when (and
+           (string-prefix-p home-dir filepath) ; the home dir is at the beginning
+           (not (string= (file-name-directory  ; and it's not a root dir
+                          (directory-file-name home-dir)) "/")))
+      (setq filepath (concat "~/" (substring filepath (length home-dir)))))
+    (concat prefix
+            (excursion--run-stock-handler #'directory-abbrev-apply (list filepath)))))
+
 ;;; Connection
 
 (defun excursion--remote-connection ()
@@ -337,16 +359,20 @@ alist or nil if the whole frame hasn't arrived."
     ;; `excursion--file-p' is true. Also note that sequential binding is required here so
     ;; default-directory is set first.
     (let* ((default-directory nil)
-           (process (excursion--remote-connection))
-           (result nil))
+           (process (excursion--remote-connection)))
       (process-send-string process request)
       ;; This blocks hard
-      (while (not result)
-        ;; consider (with-local-quit)
-        (accept-process-output process 0.1 nil t)
-        (setq result (process-get process 'results)))
-      (process-put process 'results nil)
-      result)))
+      (let ((result (excursion--wait-for-data process)))
+        (process-put process 'results nil)
+        result))))
+
+(defun excursion--wait-for-data (process)
+  (let ((result))
+    (while (not result)
+      ;; consider (with-local-quit)
+      (accept-process-output process 0.1 nil t)
+      (setq result (process-get process 'results)))
+    result))
 
 (defun excursion--connected-p ()
   "Checks if the current connection is open"

@@ -37,6 +37,7 @@ Named args:
 
 (setq load-prefer-newer t)
 
+(require 'abbreviate-file-name-test)
 (require 'connection-test)
 (require 'expand-file-name-test)
 (require 'file-attributes-test)
