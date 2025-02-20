@@ -2,7 +2,6 @@
 
 ;;; >=28.1 file-name-concat
 ;;; >=29.1 directory-abbrev-apply
-;;; Revisit expand-file-name
 ;;; Revisit multiple frames and remove excursion--data
 ;;; Add initial cache call
 
@@ -97,6 +96,7 @@ list."
    ((eq operation 'file-name-nondirectory) (apply #'excursion-file-name-nondirectory args))
    ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
    ((eq operation 'abbreviate-file-name) (apply #'excursion-abbreviate-file-name args))
+   ((eq operation 'file-readable-p) (apply #'excursion-file-readable-p args))
    (t (let ((inhibit-file-name-handlers
              (cons 'excursion-file-handler
                    (and (eq inhibit-file-name-operation operation)
@@ -272,7 +272,6 @@ list."
             (excursion--run-stock-handler #'directory-abbrev-apply (list filepath)))))
 
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
-;; XXX: Write tests after you fix expand-file-name
 (defun excursion-file-readable-p (filename)
   "Excursion's file-readable-p"
   (let* ((parts (excursion--split-prefix (expand-file-name filename)))

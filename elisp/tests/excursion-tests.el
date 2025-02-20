@@ -11,7 +11,7 @@ Each test case in should be a two-element list of the form:
 Named args:
 
 :suffix
-  Text to append to FN-NAME when the test name is derived. Useful to delineate different environments for the same function.
+  Text to append to FN when the test name is derived. Useful to delineate different environments for the same function.
 
 :setup
   Code to run before each test case is executed.
@@ -21,7 +21,6 @@ Named args:
 
 :eq-pred
   Function to use for equality test with `should'.
-
 "
   (let* ((s (symbol-name fn))
          (eq-fn (or eq-pred (symbol-function 'equal)))
@@ -47,6 +46,7 @@ Named args:
 (require 'expand-file-name-test)
 (require 'file-attributes-test)
 (require 'file-remote-p-test)
+(require 'file-readable-p-test)
 (require 'frame-test)
 (require 'utils-test)
 
