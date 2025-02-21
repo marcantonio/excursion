@@ -253,7 +253,7 @@ list."
   nil)
 
 (defun excursion-abbreviate-file-name (filename)
-  "Excusions's abbreviate-file-name."
+  "Excursions's abbreviate-file-name."
   (let* ((case-fold-search ; for `directory-abbrev-apply'
           (file-name-case-insensitive-p filename))
          (parts (excursion--split-prefix filename))
@@ -318,9 +318,9 @@ depending on the call."
     ;; Append all data to excursion--data
     (setq excursion--data (concat excursion--data contents))
     ;; Attempt to read frames from the buffer
-    (while-let ((frame (excursion--read-frame))
-                (type (excursion--frame-type frame))
-                (data (excursion--frame-data frame)))
+    (when-let ((frame (excursion--read-frame))
+               (type (excursion--frame-type frame))
+               (data (excursion--frame-data frame)))
       (cond ((eq type 'Data)
              (let ((segments nil)
                    (i 0))
@@ -335,20 +335,6 @@ depending on the call."
                               (nreverse segments)))))
             ((eq type 'Err) (error data))
             (t (error "Error: unexpected frame received %s: %s " type data))))))
-
-(defun excursion--parse-preamble (data)
-  "Extract type, lengths and payload offset from DATA. Returns nil
-if any part is missing or invalid."
-  (unless (string-empty-p data)
-    (let* ((type (aref data 0))               ; first char as type
-           (delim-pos (cl-position ?| data))) ; index of `|'
-      (when (and delim-pos (> delim-pos 1))
-        ;; Split the len field by `;', sum, and return the sum and the lengths
-        (let* ((len-str (substring data 1 delim-pos))
-               (seg-lens (mapcar #'string-to-number
-                                 (split-string len-str ";")))
-               (len (apply '+ seg-lens)))
-          (list type len seg-lens (+ delim-pos 1)))))))
 
 ;; Assumes excursion--data points to the start of a frame
 (defun excursion--read-frame ()
@@ -372,11 +358,27 @@ alist or nil if the whole frame hasn't arrived."
           ;; Make a new frame
           (excursion--frame-create-from type-char segment-lens data))))))
 
+(defun excursion--parse-preamble (data)
+  "Extract type, lengths and payload offset from DATA. Returns nil
+if any part is missing or invalid."
+  (unless (string-empty-p data)
+    (let* ((type (aref data 0))               ; first char as type
+           (delim-pos (cl-position ?| data))) ; index of `|'
+      (when (and delim-pos (> delim-pos 1))
+        ;; Split the len field by `;', sum, and return the sum and the lengths
+        (let* ((len-str (substring data 1 delim-pos))
+               (seg-lens (mapcar #'string-to-number
+                                 (split-string len-str ";")))
+               (len (apply '+ seg-lens)))
+          (list type len seg-lens (+ delim-pos 1)))))))
+
 (defun excursion--make-request (request)
   "Send REQUEST to process"
   (with-timeout (excursion-timeout
                  (progn
                    (message "timeout failure")
+                   (excursion-terminate)
+                   (excursion--remote-connection)
                    'timeout))
     ;; It's important to forget `default-directory' here. Otherwise, we get into a loop
     ;; when functions like `expand-file-name' are called before everything is loaded. For

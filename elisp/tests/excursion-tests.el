@@ -6,12 +6,12 @@
   "Macro to generate tests for FN against every case in CASES.
 
 Each test case in should be a two-element list of the form:
-  ((args...) expected)
+((args...) expected)
 
 Named args:
-
 :suffix
-  Text to append to FN when the test name is derived. Useful to delineate different environments for the same function.
+  Text to append to FN when the test name is derived. Useful to
+  delineate different environments for the same function.
 
 :setup
   Code to run before each test case is executed.
