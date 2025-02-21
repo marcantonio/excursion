@@ -36,4 +36,16 @@
                    (equal a e)))
              actual expected)))
 
+(excursion--gen-tests
+ file-readable-p
+ ((("/excursion:electron:otium") t)
+  (("/excursion:electron:/etc/shadow") nil)
+  (("/excursion:electron:nope") nil)))
+
+(excursion--gen-tests
+ file-exists-p
+ ((("/excursion:electron:otium") t)
+  (("/excursion:electron:/root") t)
+  (("/excursion:electron:nope") nil)))
+
 (provide 'file-attributes-test)

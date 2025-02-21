@@ -97,6 +97,7 @@ list."
    ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
    ((eq operation 'abbreviate-file-name) (apply #'excursion-abbreviate-file-name args))
    ((eq operation 'file-readable-p) (apply #'excursion-file-readable-p args))
+   ((eq operation 'file-exists-p) (apply #'excursion-file-exists-p args))
    (t (let ((inhibit-file-name-handlers
              (cons 'excursion-file-handler
                    (and (eq inhibit-file-name-operation operation)
@@ -273,12 +274,24 @@ list."
 
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
 (defun excursion-file-readable-p (filename)
-  "Excursion's file-readable-p"
+  "Excursion's file-readable-p."
   (let* ((parts (excursion--split-prefix (expand-file-name filename)))
          (prefix (car parts))
          (filepath (cdr parts))
          (result (excursion--make-request
                   (format "_%s;1|%sr"
+                          (length filepath)
+                          filepath))))
+    (string= result "1")))
+
+;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
+(defun excursion-file-exists-p (filename)
+  "Excursion's file-exists-p."
+  (let* ((parts (excursion--split-prefix (expand-file-name filename)))
+         (prefix (car parts))
+         (filepath (cdr parts))
+         (result (excursion--make-request
+                  (format "_%s;1|%se"
                           (length filepath)
                           filepath))))
     (string= result "1")))

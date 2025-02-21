@@ -46,7 +46,6 @@ Named args:
 (require 'expand-file-name-test)
 (require 'file-attributes-test)
 (require 'file-remote-p-test)
-(require 'file-readable-p-test)
 (require 'frame-test)
 (require 'utils-test)
 
