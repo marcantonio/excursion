@@ -53,6 +53,7 @@
  ((("/excursion:electron:~/otium") "/excursion:electron:/home/mas/otium")
   (("/excursion:electron:foo") "/excursion:electron:/home/mas/.bashrc")
   (("/excursion:electron:nope") "/excursion:electron:/home/mas/nope")
-  (("foo") (concat default-directory "foo"))))
+  (("foo") "/home/mas/mm/foo"))
+ :bindings ((default-directory "/home/mas/mm/")))
 
 (provide 'file-attributes-test)

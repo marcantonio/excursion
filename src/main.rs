@@ -62,7 +62,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
             frame.iter_segments().map(|s| std::str::from_utf8(s).unwrap_or("")).collect::<Vec<_>>();
         match frame.ty {
             DirList => handle_dir_list(&mut connection, &segments[0]).await?,
-            ExpandFileName => handle_expand_file_name(&mut connection, &segments).await?,
+            ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
             Open => handle_open(&mut connection, &segments[0]).await?,
             Save => todo!(),
             Stat => handle_stat(&mut connection, &segments[0]).await?,
@@ -75,14 +75,10 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
 
 // Just does tilde expansion right now
 async fn handle_expand_file_name<'a>(
-    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
 ) -> Result<()> {
-    // TODO: Remove this example of using multiple params
-    let [file, _]: [&str; 2] = params.try_into().map_err(|_| "handle_expand_file_name: bad segment")?;
-
-    assert!(file.starts_with("~"));
-
-    let expanded = expanduser::expanduser(&file).unwrap_or_else(|_| Path::new(file).to_path_buf());
+    assert!(filename.starts_with("~"));
+    let expanded = expanduser::expanduser(&filename).unwrap_or_else(|_| Path::new(filename).to_path_buf());
     let path = expanded.into_os_string();
     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
 }
@@ -206,11 +202,7 @@ async fn handle_stat2<'a>(
     let path = Path::new(filename);
     let p = if match ask {
         "e" => path.exists(),
-        "r" => {
-            let m = fs::read_dir(path).is_ok();
-            println!("{}", m);
-            m
-        },
+        "r" => fs::read_dir(path).is_ok(),
         _ => todo!(),
     } {
         "1"
