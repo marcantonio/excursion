@@ -48,4 +48,11 @@
   (("/excursion:electron:/root") t)
   (("/excursion:electron:nope") nil)))
 
+(excursion--gen-tests
+ file-truename
+ ((("/excursion:electron:~/otium") "/excursion:electron:/home/mas/otium")
+  (("/excursion:electron:foo") "/excursion:electron:/home/mas/.bashrc")
+  (("/excursion:electron:nope") "/excursion:electron:/home/mas/nope")
+  (("foo") (concat default-directory "foo"))))
+
 (provide 'file-attributes-test)

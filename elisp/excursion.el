@@ -72,13 +72,10 @@
 ;;; File operations
 
 ;; verify-visited-file-modtime
-;; file-exists-p
-;; file-name-directory
 ;; substitute-in-file-name
 ;; load
 ;; file-directory-p
 ;; get-file-buffer
-;; file-truename
 ;; file-name-sans-versions
 ;; file-name-all-completions
 
@@ -93,11 +90,14 @@ list."
    ((eq operation 'file-symlink-p) (apply #'excursion-file-symlink-p args))
    ((eq operation 'directory-file-name) (apply #'excursion-directory-file-name args))
    ((eq operation 'file-name-as-directory) (apply #'excursion-file-name-as-directory args))
+   ((eq operation 'file-name-directory) (apply #'excursion-file-name-directory args))
    ((eq operation 'file-name-nondirectory) (apply #'excursion-file-name-nondirectory args))
    ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
    ((eq operation 'abbreviate-file-name) (apply #'excursion-abbreviate-file-name args))
    ((eq operation 'file-readable-p) (apply #'excursion-file-readable-p args))
    ((eq operation 'file-exists-p) (apply #'excursion-file-exists-p args))
+   ((eq operation 'verify-visited-file-modtime) (apply #'excursion-verify-visited-file-modtime args))
+   ((eq operation 'file-truename) (apply #'excursion-file-truename args))
    (t (let ((inhibit-file-name-handlers
              (cons 'excursion-file-handler
                    (and (eq inhibit-file-name-operation operation)
@@ -139,6 +139,7 @@ list."
 ;;       (goto-char (point-min)))
 ;;     (switch-to-buffer buffer)))
 
+;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-expand-file-name (filename &optional directory)
   "Excursion's expand-file-name"
   (let* ((parts (excursion--split-prefix filename))
@@ -174,7 +175,7 @@ list."
                       ;; If directory is passed, expand it
                       ((not (null directory))
                        (expand-file-name directory))
-                      ;; Use `default-directory' as a last resort
+                      ;; Use `default-directory' as a last resort, but shouldn't get here
                       (t default-directory))))
                 (file-name-concat directory filepath))))))
     ;; File is expanded, but we might need to re-add the prefix
@@ -244,6 +245,12 @@ list."
     (concat prefix (excursion--run-stock-handler
                     #'file-name-as-directory (list filepath)))))
 
+(defun excursion-file-name-directory (filename)
+  "Excursion's file-name-directory."
+  (let* ((parts (excursion--split-prefix filename)))
+    (concat (car parts)
+            (excursion--run-stock-handler #'file-name-directory (list (cdr parts))))))
+
 (defun excursion-file-name-nondirectory (filename)
   "Excursion's file-name-nondirectory."
   (let* ((parts (excursion--split-prefix filename)))
@@ -295,6 +302,37 @@ list."
                           (length filepath)
                           filepath))))
     (string= result "1")))
+
+;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
+(defun excursion-verify-visited-file-modtime (&optional buffer)
+  "Excursion's verify-visited-file-modtime."
+  (let* ((buffer (or buffer (current-buffer)))
+         (filename (buffer-file-name buffer)))
+    (if (not filename)
+        t
+      (let ((modtime (visited-file-modtime)))
+        (cond
+         ((time-equal-p modtime 0) t)
+         ((not (file-exists-p filename)) nil)
+         (t (time-equal-p modtime
+                          (file-attribute-modification-time
+                           (file-attributes filename)))))))))
+
+;; TODO: Finish tests once this runs
+;; (with-temp-buffer
+;;   (set-visited-file-name "/excursion:electron:~/otium")
+;;   (verify-visited-file-modtime))
+
+;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
+(defun excursion-file-truename (filename)
+  "Excursion's file-truename."
+  (let* ((prefix (car (excursion--split-prefix filename)))
+         (file (expand-file-name filename))
+         (attrs (file-attributes file))
+         (f (file-attribute-type attrs)))
+    (if (symbolp f)
+        file
+      (concat prefix f))))
 
 ;;; Connection
 
