@@ -161,7 +161,7 @@ list."
               (if (not (file-name-absolute-p ~expanded))
                   (concat excursion--user-home-dir ~expanded)
                 ~expanded)))
-           ;; If there's a prefix and absolute, do nothing
+           ;; If there's a prefix and it's absolute, do nothing
            ((and (not (string-empty-p prefix))
                  (string-prefix-p "/" filepath))
             filepath)
@@ -175,8 +175,8 @@ list."
                       ;; If directory is passed, expand it
                       ((not (null directory))
                        (expand-file-name directory))
-                      ;; Use `default-directory' as a last resort, but shouldn't get here
-                      (t default-directory))))
+                      ;; Use `default-directory' as a last resort
+                      (t (expand-file-name default-directory)))))
                 (file-name-concat directory filepath))))))
     ;; File is expanded, but we might need to re-add the prefix
     (if (excursion--file-p expanded-file)
