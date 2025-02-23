@@ -56,4 +56,10 @@
   (("foo") "/home/mas/mm/foo"))
  :bindings ((default-directory "/home/mas/mm/")))
 
+(excursion--gen-tests
+ file-directory-p
+ ((("/excursion:electron:~/otium") t)
+  (("/excursion:electron:foo") nil)
+  (("/excursion:electron:nope") nil)))
+
 (provide 'file-attributes-test)

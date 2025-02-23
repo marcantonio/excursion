@@ -21,6 +21,10 @@ impl Frame {
         frame
     }
 
+    pub fn new_err(msg: &[u8]) -> Self {
+        Self::new(FrameType::Err, msg, &[msg.len()])
+    }
+
     pub fn is_partial(&self) -> bool {
         self.payload.len() < self.payload_len
     }

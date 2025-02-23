@@ -61,7 +61,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
         let segments =
             frame.iter_segments().map(|s| std::str::from_utf8(s).unwrap_or("")).collect::<Vec<_>>();
         match frame.ty {
-            DirList => handle_dir_list(&mut connection, &segments[0]).await?,
+            DirList => handle_dir_list(&mut connection, &segments).await?,
             ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
             Open => handle_open(&mut connection, &segments[0]).await?,
             Save => todo!(),
@@ -84,14 +84,29 @@ async fn handle_expand_file_name<'a>(
 }
 
 async fn handle_dir_list<'a>(
-    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, dirname: &str,
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
 ) -> Result<()> {
-    let entries = fs::read_dir(dirname)?
-        .map(|entry| entry.map(|e| e.file_name().into_string().unwrap_or_default()))
-        .collect::<core::result::Result<Vec<_>, io::Error>>()?
-        .join(", "); // XXX: escape commas
+    let [dirname, expand]: [&str; 2] = params.try_into().map_err(|_| "handle_dir_list: bad segment")?;
 
-    connection.write_frame(Frame::new(FrameType::Data, entries.as_bytes(), &[entries.len()])).await
+    let mut entries = match fs::read_dir(dirname).and_then(|entries| {
+        entries
+            .map(|entry| {
+                Ok(if expand == "1" {
+                    entry?.path().canonicalize()?.to_string_lossy().into_owned()
+                } else {
+                    entry?.file_name().to_string_lossy().into_owned()
+                })
+            })
+            .collect::<io::Result<Vec<_>>>()
+    }) {
+        Ok(entries) => entries,
+        Err(e) => return connection.send_err(Box::new(e)).await,
+    };
+
+    entries.splice(0..0, [".".to_string(), "..".to_string()]);
+
+    let entry_lens = entries.iter().map(|e| e.len()).collect::<Vec<_>>();
+    connection.write_frame(Frame::new(FrameType::Data, entries.join("").as_bytes(), &entry_lens)).await
 }
 
 async fn handle_open<'a>(
@@ -101,11 +116,7 @@ async fn handle_open<'a>(
         Ok(contents) => {
             connection.write_frame(Frame::new(FrameType::Data, contents.as_bytes(), &[contents.len()])).await
         },
-        Err(e) => {
-            let err_msg = e.to_string();
-            println!("error: {}", err_msg);
-            connection.write_frame(Frame::new(FrameType::Err, err_msg.as_bytes(), &[err_msg.len()])).await
-        },
+        Err(e) => connection.send_err(e).await,
     }
 }
 
@@ -186,11 +197,7 @@ async fn handle_stat<'a>(
         },
         Err(e) => match e.kind() {
             io::ErrorKind::NotFound => connection.write_frame(Frame::new(FrameType::Data, &[], &[0])).await,
-            e => {
-                let err_msg = e.to_string();
-                println!("error: {}", err_msg);
-                connection.write_frame(Frame::new(FrameType::Err, err_msg.as_bytes(), &[err_msg.len()])).await
-            },
+            _ => connection.send_err(Box::new(e)).await,
         },
     }
 }

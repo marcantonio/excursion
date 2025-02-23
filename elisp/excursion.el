@@ -2,7 +2,6 @@
 
 ;;; >=28.1 file-name-concat
 ;;; >=29.1 directory-abbrev-apply
-;;; Revisit multiple frames and remove excursion--data
 ;;; Add initial cache call
 
 ;; For dev
@@ -74,7 +73,6 @@
 ;; verify-visited-file-modtime
 ;; substitute-in-file-name
 ;; load
-;; file-directory-p
 ;; get-file-buffer
 ;; file-name-sans-versions
 ;; file-name-all-completions
@@ -98,6 +96,8 @@ list."
    ((eq operation 'file-exists-p) (apply #'excursion-file-exists-p args))
    ((eq operation 'verify-visited-file-modtime) (apply #'excursion-verify-visited-file-modtime args))
    ((eq operation 'file-truename) (apply #'excursion-file-truename args))
+   ((eq operation 'file-directory-p) (apply #'excursion-file-directory-p args))
+   ((eq operation 'directory-files) (apply #'excursion-directory-files args))
    (t (let ((inhibit-file-name-handlers
              (cons 'excursion-file-handler
                    (and (eq inhibit-file-name-operation operation)
@@ -282,13 +282,8 @@ list."
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
 (defun excursion-file-readable-p (filename)
   "Excursion's file-readable-p."
-  (let* ((parts (excursion--split-prefix (expand-file-name filename)))
-         (prefix (car parts))
-         (filepath (cdr parts))
-         (result (excursion--make-request
-                  (format "_%s;1|%sr"
-                          (length filepath)
-                          filepath))))
+  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
+         (result (excursion--make-request (format "_%s;1|%sr" (length filepath) filepath))))
     (string= result "1")))
 
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
@@ -327,12 +322,40 @@ list."
 (defun excursion-file-truename (filename)
   "Excursion's file-truename."
   (let* ((prefix (car (excursion--split-prefix filename)))
-         (file (expand-file-name filename))
-         (attrs (file-attributes file))
-         (f (file-attribute-type attrs)))
+         (f (file-attribute-type (file-attributes filename))))
     (if (symbolp f)
-        file
+        (expand-file-name filename)
       (concat prefix f))))
+
+(defun excursion-file-directory-p (filename)
+  "Excursion's file-directory-p."
+  (let* ((f (file-attribute-type (file-attributes filename))))
+    (and (symbolp f) f)))
+
+(defun excursion-directory-files (directory &optional full-name match-regexp nosort count)
+  "Excursion's directory-files."
+  (if (file-directory-p directory)
+      (let* ((filepath (cdr (excursion--split-prefix (expand-file-name directory))))
+             ;; Remote will take care of expanding
+             (result (excursion--make-request
+                      (format "~%s;1|%s%s"
+                              (length filepath)
+                              filepath
+                              (if full-name "1" "0"))))
+             (filtered (if match-regexp
+                           (seq-filter
+                            (lambda (e) (string-match-p match-regexp e))
+                            (if (listp result) result (list result))) ; make sure it's a list
+                         result))
+             (sorted (if nosort
+                         filtered
+                       (seq-sort #'string< filtered))))
+        (if (and (integerp count) (> count 0))
+            (seq-take sorted count)
+          sorted))
+    ;; Tramp errors in this case, so we will too
+    (when (not (file-exists-p directory))
+      (error "No such file or directory"))))
 
 ;;; Connection
 

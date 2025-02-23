@@ -14,6 +14,7 @@ pub struct Connection<SocketRx, SocketTx> {
 }
 
 type Result<T> = crate::Result<T>;
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<SocketRx, SocketTx> {
     pub fn new(reader: SocketRx, writer: SocketTx) -> Self {
@@ -144,6 +145,12 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
         self.tx.flush().await?;
 
         Ok(())
+    }
+
+    pub async fn send_err(&mut self, e: Error) -> Result<()> {
+        let msg = e.to_string();
+        println!("{}", msg);
+        self.write_frame(Frame::new_err(e.to_string().as_bytes())).await
     }
 }
 

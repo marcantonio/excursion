@@ -43,6 +43,7 @@ Named args:
 
 (require 'abbreviate-file-name-test)
 (require 'connection-test)
+(require 'directory-files-test)
 (require 'expand-file-name-test)
 (require 'file-attributes-test)
 (require 'file-remote-p-test)
