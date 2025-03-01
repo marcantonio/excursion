@@ -327,11 +327,16 @@ list."
 ;; (with-temp-buffer
 ;;   (set-visited-file-name "/excursion:electron:~/otium")
 ;;   (verify-visited-file-modtime))
+;; (get-file-buffer)
+;; (make-auto-save-file-name)
+;; (auto-save-mode)
+;; (seq-find (lambda (x) (equal x 'auto-save-mode)) minor-mode-list)
+;; (setq auto-save-default t)
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-file-truename (filename)
   "Excursion's file-truename."
-  (let* ((prefix (car (excursion--split-prefix filename)))
+  (let* ((prefix (car (excursion--split-prefix filename t)))
          (f (file-attribute-type (file-attributes filename))))
     (if (symbolp f)
         (expand-file-name filename)
@@ -419,17 +424,15 @@ list."
   "Get lock file info for FILE or return nil."
   (file-symlink-p (make-lock-file-name file)))
 
-;; TODO: When multiple remotes are supported, check first
 (defun excursion-file-in-directory-p (file dir)
   "Excursion's file-in-directory-p."
-  (excursion--run-stock-handler #'file-in-directory-p (list file dir)))
+  (when (excursion--remote-equal-p file dir)
+    (excursion--run-stock-handler #'file-in-directory-p (list file dir))))
 
-;; TODO: When multiple remotes are supported, check first
 (defun excursion-file-equal-p (file1 file2)
   "Excursion's file-equal-p."
-  (and (excursion--file-p file1 t)
-       (excursion--file-p file2 t)
-       (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
+  (when (excursion--remote-equal-p file1 file2)
+    (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
 
 ;;; Connection
 
@@ -613,6 +616,16 @@ is malformed, or if PART is unknown."
               ('host host)
               ('file file)
               ('nil (list method host file)))))))))
+
+(defun excursion--remote-equal-p (file1 file2)
+  "Test that the method and host parts of FILE1 and FILE2 are the
+same."
+  (let ((p1 (excursion--parse-filename file1))
+        (p2 (excursion--parse-filename file2)))
+    (and (string= (car p1)
+                  (car p2))
+         (string= (cadr p1)
+                  (cadr p2)))))
 
 (defun excursion--setup-buffer (buffer filename contents)
   "Set up BUFFER for FILENAME and inject CONTENTS."

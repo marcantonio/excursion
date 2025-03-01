@@ -56,6 +56,11 @@
   (("foo") "/home/mas/mm/foo"))
  :bindings ((default-directory "/home/mas/mm/")))
 
+;; Fail on non-excursion files
+(ert-deftest excursion-file-truename-test ()
+  :expected-result :failed
+  (should (equal (excursion-file-truename "foo") "/home/mas/mm/foo")))
+
 (excursion--gen-tests
  file-directory-p
  ((("/excursion:electron:~/otium") t)

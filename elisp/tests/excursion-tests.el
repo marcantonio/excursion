@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 
+;; TODO: It's hard to see why a test failed because of the `apply'
 (cl-defmacro excursion--gen-tests (fn cases &key suffix setup bindings eq-pred)
   "Macro to generate tests for FN against every case in CASES.
 
@@ -46,6 +47,8 @@ Named args:
 (require 'directory-files-test)
 (require 'expand-file-name-test)
 (require 'file-attributes-test)
+(require 'file-equal-p-test)
+(require 'file-in-directory-p-test)
 (require 'file-remote-p-test)
 (require 'frame-test)
 (require 'utils-test)
