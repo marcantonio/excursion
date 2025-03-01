@@ -1,6 +1,6 @@
 ;;; -*- lexical-binding: t; -*-
 
-;;; >=28.1 file-name-concat
+;;; >=28.1 file-name-concat, remote-file-name-inhibit-locks, make-lock-file-name.
 ;;; >=29.1 directory-abbrev-apply
 ;;; Add initial cache call
 
@@ -16,6 +16,8 @@
 (defvar excursion-host "localhost")
 (defvar excursion-port 7001)
 (defvar excursion-timeout 2)
+(defvar excursion-directory (concat user-emacs-directory "excursion/"))
+(defvar excursion-auto-save-directory (concat excursion-directory "auto-saves"))
 
 (defconst excursion--process-name "excursion")
 
@@ -98,12 +100,20 @@ list."
    ((eq operation 'file-truename) (apply #'excursion-file-truename args))
    ((eq operation 'file-directory-p) (apply #'excursion-file-directory-p args))
    ((eq operation 'directory-files) (apply #'excursion-directory-files args))
-   (t (let ((inhibit-file-name-handlers
-             (cons 'excursion-file-handler
-                   (and (eq inhibit-file-name-operation operation)
-                        inhibit-file-name-handlers)))
-            (inhibit-file-name-operation operation))
-        (apply operation args)))))
+   ((eq operation 'make-auto-save-file-name) (funcall #'excursion-make-auto-save-file-name))
+   ((eq operation 'make-lock-file-name) (apply #'excursion-make-lock-file-name args))
+   ((eq operation 'file-locked-p) (apply #'excursion-file-locked-p args))
+   ((eq operation 'lock-file) (apply #'excursion-lock-file args))
+   ((eq operation 'file-in-directory-p) (apply #'excursion-file-in-directory-p args))
+   ((eq operation 'file-equal-p) (apply #'excursion-file-equal-p args))
+   (t
+    (message "#%s %s" operation args)
+    (let ((inhibit-file-name-handlers
+           (cons 'excursion-file-handler
+                 (and (eq inhibit-file-name-operation operation)
+                      inhibit-file-name-handlers)))
+          (inhibit-file-name-operation operation))
+      (apply operation args)))))
 
 (defun excursion--run-stock-handler (operation args)
   "Run OPERATION on ARGS via the default file handler."
@@ -253,7 +263,7 @@ list."
 
 (defun excursion-file-name-nondirectory (filename)
   "Excursion's file-name-nondirectory."
-  (let* ((parts (excursion--split-prefix filename)))
+  (let ((parts (excursion--split-prefix filename)))
     (excursion--run-stock-handler #'file-name-nondirectory (list (cdr parts)))))
 
 (defun excursion-file-name-case-insensitive-p (filename)
@@ -356,6 +366,70 @@ list."
     ;; Tramp errors in this case, so we will too
     (when (not (file-exists-p directory))
       (error "No such file or directory"))))
+
+;; TODO: Finish tests once this runs
+(defun excursion-make-auto-save-file-name ()
+  "Excursion's make-auto-save-file-name. Will create `excursion-auto-save-directory' if needed."
+  (when-let ((auto-save-default)
+             (excursion-auto-save-directory (expand-file-name excursion-auto-save-directory))
+             (filename (expand-file-name (buffer-file-name))))
+    (unless (file-exists-p excursion-auto-save-directory)
+      (with-file-modes #o0700
+        (make-directory excursion-auto-save-directory t)))
+    (concat excursion-auto-save-directory "/" (subst-char-in-string ?/ ?# filename) "#")))
+
+;; (setq auto-save-default t)
+;; ;;(make-auto-save-file-name)
+;; (excursion-make-auto-save-file)
+;; (lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
+
+;; (excursion-make-lock-file-name "/excursion:electron:/home/mas/excursion/Cargo.toml")
+;; (excursion--get-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
+;; (excursion-file-locked-p "/excursion:electron:/home/mas/excursion/Cargo.toml")
+
+;; (excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
+
+(defun excursion-lock-file (file)
+  (unless (eq (file-locked-p file) t) ; t means we own the lock
+    (when (and buffer-file-truename
+               (not (verify-visited-file-modtime))
+               (file-exists-p file))
+      (message ">>%s" buffer-file-truename))))
+
+(defun excursion-file-locked-p (file)
+  "Excursion's file-locked-p."
+  (save-match-data
+    (when-let ((lock-info (excursion--get-lock-file file))
+               (re "^\\([[:alnum:]_-]+\\)@\\([[:alnum:]_.-]+\\)\\.\\([0-9]+\\)$")
+               (_ (string-match re lock-info)))
+      ;; Return t if locked by me, or the user with the lock
+      (or
+       (and (equal (match-string 1 lock-info) (user-login-name)) ; user
+            (equal (match-string 2 lock-info) (system-name))     ; host
+            (equal (match-string 3 lock-info) (emacs-pid)))      ; pid
+       (match-string 1 lock-info)))))
+
+(defun excursion-make-lock-file-name (file)
+  "Excursion's make-lock-file-name."
+  (and create-lockfiles
+       (not remote-file-name-inhibit-locks)
+       (excursion--run-stock-handler #'make-lock-file-name (list file))))
+
+(defun excursion--get-lock-file (file)
+  "Get lock file info for FILE or return nil."
+  (file-symlink-p (make-lock-file-name file)))
+
+;; TODO: When multiple remotes are supported, check first
+(defun excursion-file-in-directory-p (file dir)
+  "Excursion's file-in-directory-p."
+  (excursion--run-stock-handler #'file-in-directory-p (list file dir)))
+
+;; TODO: When multiple remotes are supported, check first
+(defun excursion-file-equal-p (file1 file2)
+  "Excursion's file-equal-p."
+  (and (excursion--file-p file1 t)
+       (excursion--file-p file2 t)
+       (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
 
 ;;; Connection
 
@@ -500,18 +574,24 @@ process or FILE is non-nil."
 
 ;;; Util
 
-(defun excursion--split-prefix (str)
+(defun excursion--split-prefix (str &optional required)
   "Splits STR into a prefix and filepath and returns them as a
-cons. The car will be `nil' if there's no prefix."
+cons. If there is no prefix, the car will be `nil' unless
+REQUIRED is t, in which case an error is signaled."
   (save-match-data
     (if (string-match "^/excursion:[^:]+:" str)
         (let ((prefix (match-string 0 str)))
           (cons prefix (substring str (match-end 0))))
-      (cons "" str))))
+      (if (not required)
+          (cons "" str)
+        (user-error "Invalid excursion file: %s" str)))))
 
-(defun excursion--file-p (file)
-  "True if FILE starts with excursion's prefix."
-  (string-prefix-p excursion--prefix file))
+;; TODO: Make this handle the host too
+(defun excursion--file-p (file &optional required)
+  "True if FILE starts with excursion's prefix. Will error if
+REQUIRED is set."
+  (or (string-prefix-p excursion--prefix file)
+      (when required (user-error "Invalid excursion file: %s" file))))
 
 (defun excursion--parse-filename (filename &optional part)
   "Parse FILENAME and return the method, host, and file as a
