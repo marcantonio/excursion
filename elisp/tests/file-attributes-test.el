@@ -16,8 +16,8 @@
    '(nil
      1 1000 1000
      :ignore
-     (26472 46601 118689 298629)
-     (26472 46601 118689 298629)
+     :ignore
+     :ignore
      3838 "-rw-r--r--" nil 557949
      (-2 . 64769)))
   (("/excursion:electron:~/foo")
@@ -38,9 +38,18 @@
 
 (excursion--gen-tests
  file-readable-p
- ((("/excursion:electron:otium") t)
+ ((("/excursion:electron:~/.bashrc") t)
+  (("/excursion:electron:otium") t)
   (("/excursion:electron:/etc/shadow") nil)
   (("/excursion:electron:nope") nil)))
+
+(excursion--gen-tests
+ file-writable-p
+ ((("/excursion:electron:foo") t)
+  (("/excursion:electron:otium") t)
+  (("/excursion:electron:/etc/shadow") nil)
+  (("/excursion:electron:nope/foo") nil)))
+(excursion-file-attributes "/excursion:electron:mm")
 
 (excursion--gen-tests
  file-exists-p

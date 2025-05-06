@@ -73,11 +73,11 @@
 ;;; File operations
 
 ;; verify-visited-file-modtime
-;; substitute-in-file-name
 ;; load
+;; file-name-all-completions
+
 ;; get-file-buffer
 ;; file-name-sans-versions
-;; file-name-all-completions
 
 (defun excursion-file-handler (operation &rest args)
   "Excursion's file handler. Will pass OPERATION and ARGS to the
@@ -95,6 +95,7 @@ list."
    ((eq operation 'file-name-case-insensitive-p) (apply #'excursion-file-name-case-insensitive-p args))
    ((eq operation 'abbreviate-file-name) (apply #'excursion-abbreviate-file-name args))
    ((eq operation 'file-readable-p) (apply #'excursion-file-readable-p args))
+   ((eq operation 'file-writable-p) (apply #'excursion-file-writable-p args))
    ((eq operation 'file-exists-p) (apply #'excursion-file-exists-p args))
    ((eq operation 'verify-visited-file-modtime) (apply #'excursion-verify-visited-file-modtime args))
    ((eq operation 'file-truename) (apply #'excursion-file-truename args))
@@ -106,6 +107,9 @@ list."
    ((eq operation 'lock-file) (apply #'excursion-lock-file args))
    ((eq operation 'file-in-directory-p) (apply #'excursion-file-in-directory-p args))
    ((eq operation 'file-equal-p) (apply #'excursion-file-equal-p args))
+   ((eq operation 'substitute-in-file-name) (apply #'excursion-substitute-in-file-name args))
+   ((eq operation 'load) (apply #'excursion-load args))
+   ((eq operation 'insert-file-contents) (apply #'excursion-insert-file-contents args))
    (t
     (message "#%s %s" operation args)
     (let ((inhibit-file-name-handlers
@@ -297,6 +301,13 @@ list."
     (string= result "1")))
 
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
+(defun excursion-file-writable-p (filename)
+  "Excursion's file-writable-p."
+  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
+         (result (excursion--make-request (format "_%s;1|%sw" (length filepath) filepath))))
+    (string= result "1")))
+
+;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
 (defun excursion-file-exists-p (filename)
   "Excursion's file-exists-p."
   (let* ((parts (excursion--split-prefix (expand-file-name filename)))
@@ -401,6 +412,8 @@ list."
                (file-exists-p file))
       (message ">>%s" buffer-file-truename))))
 
+;;(excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
+
 (defun excursion-file-locked-p (file)
   "Excursion's file-locked-p."
   (save-match-data
@@ -433,6 +446,14 @@ list."
   "Excursion's file-equal-p."
   (when (excursion--remote-equal-p file1 file2)
     (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
+
+(defun excursion-substitute-in-file-name (filename)
+  (excursion--run-stock-handler #'substitute-in-file-name (list filename)))
+
+(defun excursion-load (file &optional noerror nomessage nosuffix must-suffix)
+  (excursion--run-stock-handler #'load (list file noerror nomessage nosuffix must-suffix)))
+
+;;(load "/excursion:electron:~/excursion/elisp/excursion-frame.el")
 
 ;;; Connection
 

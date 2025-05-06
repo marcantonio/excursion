@@ -210,6 +210,7 @@ async fn handle_stat2<'a>(
     let p = if match ask {
         "e" => path.exists(),
         "r" => fs::read_dir(path).is_ok(),
+        "w" => is_writable(path),
         _ => todo!(),
     } {
         "1"
@@ -217,4 +218,11 @@ async fn handle_stat2<'a>(
         "0"
     };
     connection.write_frame(Frame::new(FrameType::Data, p.as_bytes(), &[1])).await
+}
+
+// TODO: delete me
+fn is_writable(path: &Path) -> bool {
+    let metadata = path.metadata().unwrap();
+    let permissions = metadata.permissions();
+    !permissions.readonly()
 }
