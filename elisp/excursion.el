@@ -131,7 +131,7 @@ list."
     (apply operation args)))
 
 (defun excursion-insert-file-contents (filename &optional visit beg end replace)
-  (let* ((path (excursion-expand-file-name filename))
+  (let* ((path (cdr (excursion--split-prefix (expand-file-name filename))))
          (request (format "(%s|%s" (length path) path))
          (contents (excursion--make-request request)))
     (insert contents)
@@ -144,10 +144,10 @@ list."
 
 ;; (progn
 ;;   (excursion-terminate)
-;;   (let* ((filename "src/main.rs")
+;;   (let* ((filename "../Cargo.toml")
 ;;          (buffer (generate-new-buffer (file-name-nondirectory filename))))
 ;;     (with-current-buffer buffer
-;;       (setq default-directory (concat "/excursion:" (file-name-directory filename)))
+;;       (setq default-directory (concat "/excursion:electron:~/excursion/elisp/"))
 ;;       (excursion-insert-file-contents filename t)
 ;;       (set-auto-mode)
 ;;       (goto-char (point-min)))
@@ -449,7 +449,7 @@ list."
 (defun excursion-load (file &optional noerror nomessage nosuffix must-suffix)
   (excursion--run-stock-handler #'load (list file noerror nomessage nosuffix must-suffix)))
 
-;;(load "/excursion:electron:~/excursion/elisp/excursion-frame.el")
+;;(load "/excursion:electron:~/excursion/elisp/mm.el")
 
 ;;; Connection
 
