@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::fs;
 use std::fs::read_link;
 use std::io;
@@ -209,7 +210,7 @@ async fn handle_stat2<'a>(
     let path = Path::new(filename);
     let p = if match ask {
         "e" => path.exists(),
-        "r" => fs::read_dir(path).is_ok(),
+        "r" => is_readable(path),
         "w" => is_writable(path),
         _ => todo!(),
     } {
@@ -220,9 +221,38 @@ async fn handle_stat2<'a>(
     connection.write_frame(Frame::new(FrameType::Data, p.as_bytes(), &[1])).await
 }
 
-// TODO: delete me
-fn is_writable(path: &Path) -> bool {
-    let metadata = path.metadata().unwrap();
-    let permissions = metadata.permissions();
-    !permissions.readonly()
+fn is_readable<P: AsRef<Path>>(path: P) -> bool {
+    let path = path.as_ref();
+    let c_path = match CString::new(path.as_os_str().as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    unsafe { libc::access(c_path.as_ptr(), libc::R_OK) == 0 }
+}
+
+fn is_writable<P: AsRef<Path>>(path: P) -> bool {
+    let path = path.as_ref();
+    let c_path = match CString::new(path.as_os_str().as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    if unsafe { libc::access(c_path.as_ptr(), libc::W_OK) == 0 } {
+        return true;
+    }
+
+    if let Some(errno) = std::io::Error::last_os_error().raw_os_error() {
+        if errno == libc::ENOENT {
+            if let Some(parent) = path.parent() {
+                let c_parent = match CString::new(parent.as_os_str().as_bytes()) {
+                    Ok(c) => c,
+                    Err(_) => return false,
+                };
+                return unsafe { libc::access(c_parent.as_ptr(), libc::W_OK) == 0 };
+            }
+        }
+    }
+
+    false
 }

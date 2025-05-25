@@ -41,15 +41,16 @@
  ((("/excursion:electron:~/.bashrc") t)
   (("/excursion:electron:otium") t)
   (("/excursion:electron:/etc/shadow") nil)
-  (("/excursion:electron:nope") nil)))
+  (("/excursion:electron:nope") nil)
+  (("/excursion:electron:excursion/foo") nil)))
 
 (excursion--gen-tests
  file-writable-p
  ((("/excursion:electron:foo") t)
   (("/excursion:electron:otium") t)
   (("/excursion:electron:/etc/shadow") nil)
-  (("/excursion:electron:nope/foo") nil)))
-(excursion-file-attributes "/excursion:electron:mm")
+  (("/excursion:electron:nope/foo") nil)
+  (("/excursion:electron:excursion/foo") t)))
 
 (excursion--gen-tests
  file-exists-p
