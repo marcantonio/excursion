@@ -294,29 +294,25 @@ list."
             (excursion--run-stock-handler #'directory-abbrev-apply (list filepath)))))
 
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
+(defun excursion-file-exists-p (filename)
+  "Excursion's file-exists-p."
+  (excursion--check-file "e" filename))
+
+;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
 (defun excursion-file-readable-p (filename)
   "Excursion's file-readable-p."
-  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
-         (result (excursion--make-request (format "_%s;1|%sr" (length filepath) filepath))))
-    (string= result "1")))
+  (excursion--check-file "r" filename))
 
 ;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
 (defun excursion-file-writable-p (filename)
   "Excursion's file-writable-p."
-  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
-         (result (excursion--make-request (format "_%s;1|%sw" (length filepath) filepath))))
-    (string= result "1")))
+  (excursion--check-file "w" filename))
 
-;; TODO: Consider lumping this in with `excursion-file-attributes' when we have a cache
-(defun excursion-file-exists-p (filename)
-  "Excursion's file-exists-p."
-  (let* ((parts (excursion--split-prefix (expand-file-name filename)))
-         (prefix (car parts))
-         (filepath (cdr parts))
+(defun excursion--check-file (op filename)
+  "Calls stat2 with OP on FILENAME."
+  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
          (result (excursion--make-request
-                  (format "_%s;1|%se"
-                          (length filepath)
-                          filepath))))
+                  (format "_%s;1|%s%s" (length filepath) filepath op))))
     (string= result "1")))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
@@ -545,7 +541,7 @@ if any part is missing or invalid."
           (list type len seg-lens (+ delim-pos 1)))))))
 
 (defun excursion--make-request (request)
-  "Send REQUEST to process"
+  "Send REQUEST to process."
   (with-timeout (excursion-timeout
                  (progn
                    (message "timeout failure")
@@ -577,7 +573,7 @@ if any part is missing or invalid."
     results))
 
 (defun excursion--connected-p ()
-  "Checks if the current connection is open"
+  "Checks if the current connection is open."
   (when-let ((process (get-process excursion--process-name))
              (process-live-p process)
              (status (process-status process)))
