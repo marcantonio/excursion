@@ -73,7 +73,6 @@
 ;;; File operations
 
 ;; verify-visited-file-modtime
-;; load
 ;; file-name-all-completions
 
 ;; get-file-buffer
@@ -110,6 +109,7 @@ list."
    ((eq operation 'substitute-in-file-name) (apply #'excursion-substitute-in-file-name args))
    ((eq operation 'load) (apply #'excursion-load args))
    ((eq operation 'insert-file-contents) (apply #'excursion-insert-file-contents args))
+   ((eq operation 'set-visited-file-modtime) (apply #'excursion-set-visited-file-modtime args))
    (t
     (message "#%s %s" operation args)
     (let ((inhibit-file-name-handlers
@@ -340,6 +340,14 @@ list."
 ;; (seq-find (lambda (x) (equal x 'auto-save-mode)) minor-mode-list)
 ;; (setq auto-save-default t)
 
+;; TODO: tests
+(defun excursion-set-visited-file-modtime (&optional time)
+  (unless time
+    (setq time
+	  (file-attribute-modification-time
+           (file-attributes (buffer-file-name)))))
+  (excursion--run-stock-handler (#'set-visited-file-name time)))
+
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-file-truename (filename)
   "Excursion's file-truename."
@@ -408,7 +416,13 @@ list."
                (file-exists-p file))
       (message ">>%s" buffer-file-truename))))
 
+;; (progn
+;;   (let* ((default-directory (concat "/excursion:electron:~/excursion/elisp/"))
+;;          (buffer (find-file-noselect "../Cargo.toml")))
+;;     (switch-to-buffer buffer)))
+
 ;;(excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
+;;(lock-file "/home/mas/Code/excursion/elisp/Makefile")
 
 (defun excursion-file-locked-p (file)
   "Excursion's file-locked-p."
@@ -425,9 +439,13 @@ list."
 
 (defun excursion-make-lock-file-name (file)
   "Excursion's make-lock-file-name."
+  ;; files.el doesn't seem to check these, but adding here anyway for tramp compat
   (and create-lockfiles
        (not remote-file-name-inhibit-locks)
        (excursion--run-stock-handler #'make-lock-file-name (list file))))
+
+;;(excursion-make-lock-file-name "/excursion:electron:/home/mas/excursion/Cargo.toml")
+;;(excursion--get-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
 
 (defun excursion--get-lock-file (file)
   "Get lock file info for FILE or return nil."
@@ -444,12 +462,12 @@ list."
     (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
 
 (defun excursion-substitute-in-file-name (filename)
+  "Excursion's substitute-in-file-name."
   (excursion--run-stock-handler #'substitute-in-file-name (list filename)))
 
 (defun excursion-load (file &optional noerror nomessage nosuffix must-suffix)
+  "Excursion's load."
   (excursion--run-stock-handler #'load (list file noerror nomessage nosuffix must-suffix)))
-
-;;(load "/excursion:electron:~/excursion/elisp/mm.el")
 
 ;;; Connection
 

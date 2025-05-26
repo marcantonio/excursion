@@ -49,6 +49,7 @@ Named args:
 (require 'file-attributes-test)
 (require 'file-equal-p-test)
 (require 'file-in-directory-p-test)
+(require 'file-locks-test)
 (require 'file-remote-p-test)
 (require 'frame-test)
 (require 'utils-test)
