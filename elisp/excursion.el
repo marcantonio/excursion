@@ -72,11 +72,7 @@
 
 ;;; File operations
 
-;; verify-visited-file-modtime
 ;; file-name-all-completions
-
-;; get-file-buffer
-;; file-name-sans-versions
 
 (defun excursion-file-handler (operation &rest args)
   "Excursion's file handler. Will pass OPERATION and ARGS to the
@@ -104,12 +100,16 @@ list."
    ((eq operation 'make-lock-file-name) (apply #'excursion-make-lock-file-name args))
    ((eq operation 'file-locked-p) (apply #'excursion-file-locked-p args))
    ((eq operation 'lock-file) (apply #'excursion-lock-file args))
+   ((eq operation 'unlock-file) (apply #'excursion-unlock-file args))
    ((eq operation 'file-in-directory-p) (apply #'excursion-file-in-directory-p args))
    ((eq operation 'file-equal-p) (apply #'excursion-file-equal-p args))
    ((eq operation 'substitute-in-file-name) (apply #'excursion-substitute-in-file-name args))
    ((eq operation 'load) (apply #'excursion-load args))
    ((eq operation 'insert-file-contents) (apply #'excursion-insert-file-contents args))
    ((eq operation 'set-visited-file-modtime) (apply #'excursion-set-visited-file-modtime args))
+   ((eq operation 'file-newer-than-file-p) (apply #'excursion-file-newer-than-file-p args))
+   ((eq operation 'file-modes) (apply #'excursion-file-modes args))
+   ((eq operation 'vc-registered) (apply #'excursion-vc-registered args))
    (t
     (message "#%s %s" operation args)
     (let ((inhibit-file-name-handlers
@@ -131,31 +131,21 @@ list."
     (apply operation args)))
 
 (defun excursion-insert-file-contents (filename &optional visit beg end replace)
-  (let* ((path (cdr (excursion--split-prefix (expand-file-name filename))))
+  (let* ((filename (expand-file-name filename))
+         (path (cdr (excursion--split-prefix filename)))
          (request (format "(%s|%s" (length path) path))
          (contents (excursion--make-request request)))
     (insert contents)
     (when visit
       (setq buffer-file-name filename
-            buffer-read-only t)
+            buffer-read-only (not (file-writable-p filename)))
       (set-visited-file-modtime)
       (set-buffer-modified-p nil))
-    (cons path (length contents))))
-
-;; (progn
-;;   (excursion-terminate)
-;;   (let* ((filename "../Cargo.toml")
-;;          (buffer (generate-new-buffer (file-name-nondirectory filename))))
-;;     (with-current-buffer buffer
-;;       (setq default-directory (concat "/excursion:electron:~/excursion/elisp/"))
-;;       (excursion-insert-file-contents filename t)
-;;       (set-auto-mode)
-;;       (goto-char (point-min)))
-;;     (switch-to-buffer buffer)))
+    (cons filename (length contents))))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-expand-file-name (filename &optional directory)
-  "Excursion's expand-file-name"
+  "Excursion's expand-file-name."
   (let* ((parts (excursion--split-prefix filename))
          (prefix (car parts))
          (filepath (cdr parts))
@@ -346,7 +336,7 @@ list."
     (setq time
 	  (file-attribute-modification-time
            (file-attributes (buffer-file-name)))))
-  (excursion--run-stock-handler (#'set-visited-file-name time)))
+  (excursion--run-stock-handler #'set-visited-file-modtime (list time)))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-file-truename (filename)
@@ -416,10 +406,7 @@ list."
                (file-exists-p file))
       (message ">>%s" buffer-file-truename))))
 
-;; (progn
-;;   (let* ((default-directory (concat "/excursion:electron:~/excursion/elisp/"))
-;;          (buffer (find-file-noselect "../Cargo.toml")))
-;;     (switch-to-buffer buffer)))
+(defun excursion-unlock-file (file))
 
 ;;(excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
 ;;(lock-file "/home/mas/Code/excursion/elisp/Makefile")
@@ -468,6 +455,27 @@ list."
 (defun excursion-load (file &optional noerror nomessage nosuffix must-suffix)
   "Excursion's load."
   (excursion--run-stock-handler #'load (list file noerror nomessage nosuffix must-suffix)))
+
+(defun excursion-vc-registered (file))
+
+;; TODO: tests
+(defun excursion-file-modes (filename &optional flag)
+  "Excursion's file-modes."
+  (when-let ((attrs (file-attributes filename))
+	     (mode-string (file-attribute-modes attrs)))
+    (if (and (not (eq flag 'nofollow)) (eq ?l (aref mode-string 0)))
+	(file-modes (file-truename filename))
+      (excursion--mode-string-to-int mode-string))))
+
+;; TODO: tests
+(defun excursion-file-newer-than-file-p (filename1 filename2)
+  "Excursion's file-newer-than-file-p."
+  (cond
+   ((not (file-exists-p filename1)) nil)
+   ((not (file-exists-p filename2)) t)
+   (t (time-less-p
+       (file-attribute-modification-time (file-attributes filename2))
+       (file-attribute-modification-time (file-attributes filename1))))))
 
 ;;; Connection
 
@@ -673,6 +681,35 @@ same."
     (insert contents)
     (set-buffer-modified-p nil)
     (goto-char (point-min))))
+
+;; TODO: tests
+(defun excursion--mode-string-to-int (mode-string)
+  "Convert an `ls -l` style MODE-STRING to an integer."
+  (let* ((perm (substring mode-string 1)) ; remove the file‐type char
+         (bit-values [256 128 64 32 16 8 4 2 1])
+         (total 0))
+    (dotimes (i 9 total)
+      (unless (eq (aref perm i) ?-)
+        (setq total (+ total (aref bit-values i)))))))
+
+;; (let* ((default-directory "/excursion:electron:~/excursion/"))
+;;   (find-file "/excursion:electron:~/excursion/Cargo.toml"))
+
+;; (progn
+;;   (let* ((default-directory (concat "/excursion:electron:~/excursion/"))
+;;          (buffer (find-file-noselect "Cargo.toml")))
+;;     (switch-to-buffer buffer)))
+
+;; (progn
+;;   (excursion-terminate)
+;;   (let* ((filename "../Cargo.toml")
+;;          (buffer (generate-new-buffer (file-name-nondirectory filename))))
+;;     (with-current-buffer buffer
+;;       (setq default-directory (concat "/excursion:electron:~/excursion/elisp/"))
+;;       (excursion-insert-file-contents filename t)
+;;       (set-auto-mode)
+;;       (goto-char (point-min)))
+;;     (switch-to-buffer buffer)))
 
 ;; (file-exists-p "/excursion:foo")
 ;; (expand-file-name "/excursion:foo")
