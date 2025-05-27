@@ -198,6 +198,7 @@ list."
         ;; Otherwise, parse the file path
         (cond ((equal identification 'method) "excursion")
               ((equal identification 'host) (excursion--get-host filename))
+              ((equal identification 'localname) (cdr (excursion--split-prefix filename)))
               (t (excursion--full-prefix filename)))))))
 
 (defun excursion-file-attributes (filename &optional id-format)
