@@ -44,7 +44,13 @@
   (("/excursion:electron:") "/excursion:electron:/home/mas/")
   (("/excursion:electron:foo" "/excursion:electron:") "/excursion:electron:/home/mas/foo")
   (("/excursion:electron:" "/excursion:electron:") "/excursion:electron:/home/mas/")
-  (("/excursion:electron:foo" "bar") "/excursion:electron:/home/mas/foo"))
+  (("/excursion:electron:foo" "bar") "/excursion:electron:/home/mas/foo")
+
+  (("src/../Cargo.toml") "/excursion:electron:/home/mas/excursion/Cargo.toml")
+  (("../Cargo.toml") "/excursion:electron:/home/mas/Cargo.toml")
+  (("../..") "/excursion:electron:/home")
+  ((".." "..") "/excursion:electron:/home")
+  (("/excursion:electron:~mas/..") "/excursion:electron:/home"))
  :suffix "remote-default-dir"
  :bindings ((default-directory "/excursion:electron:/home/mas/excursion/")))
 
@@ -90,7 +96,13 @@
   (("/excursion:electron:") "/excursion:electron:/home/mas/")
   (("/excursion:electron:foo" "/excursion:electron:") "/excursion:electron:/home/mas/foo")
   (("/excursion:electron:" "/excursion:electron:") "/excursion:electron:/home/mas/")
-  (("/excursion:electron:foo" "bar") "/excursion:electron:/home/mas/foo"))
+  (("/excursion:electron:foo" "bar") "/excursion:electron:/home/mas/foo")
+
+  (("src/../Cargo.toml") "/home/mas/Code/excursion/Cargo.toml")
+  (("../Cargo.toml") "/home/mas/Code/Cargo.toml")
+  (("../../..") "/home")
+  ((".." "..") "/home/mas")
+  (("/excursion:electron:~mas/..") "/excursion:electron:/home"))
  :suffix "local-default-dir"
  :bindings ((default-directory "/home/mas/Code/excursion/")))
 

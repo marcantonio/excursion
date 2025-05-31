@@ -2,7 +2,11 @@
 
 ;;; >=28.1 file-name-concat, remote-file-name-inhibit-locks, make-lock-file-name.
 ;;; >=29.1 directory-abbrev-apply
+
 ;;; Add initial cache call
+;;; insert-file-contents
+;;; finish locking
+;;; complete tests
 
 ;; For dev
 (let* ((excursion-path (file-name-directory (or load-file-name (buffer-file-name))))
@@ -146,46 +150,45 @@ list."
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-expand-file-name (filename &optional directory)
   "Excursion's expand-file-name."
-  (let* ((parts (excursion--split-prefix filename))
-         (prefix (car parts))
-         (filepath (cdr parts))
-         (expanded-file
-          (cond
-           ;; If there is no prefix and it's absolute, treat it as a local file
-           ((and (string-empty-p prefix)
-                 (file-name-absolute-p filepath))
-            (excursion--run-stock-handler #'expand-file-name (list filepath)))
-           ;; If we have prefix and a `~' it might be absolute. Go remote to find out
-           ((and (not (string-empty-p prefix))
-                 (string-prefix-p "~" filepath))
-            (let ((~expanded (excursion--make-request
-                              (format "*%s|%s" (length filepath) filepath))))
-              ;; If it's still not expanded, treat it as relative and just add the user's
-              ;; home dir
-              (if (not (file-name-absolute-p ~expanded))
-                  (concat excursion--user-home-dir ~expanded)
-                ~expanded)))
-           ;; If there's a prefix and it's absolute, do nothing
-           ((and (not (string-empty-p prefix))
-                 (string-prefix-p "/" filepath))
-            filepath)
-           ;; For everything that's left, just fix up the directory
-           (t (let ((directory
-                     (cond
-                      ;; Always treat prefixed relative paths wrt the user's home dir
-                      ((and (not (string-empty-p prefix))
-                            (not (file-name-absolute-p filepath)))
-                       excursion--user-home-dir)
-                      ;; If directory is passed, expand it
-                      ((not (null directory))
-                       (expand-file-name directory))
-                      ;; Use `default-directory' as a last resort
-                      (t (expand-file-name default-directory)))))
-                (file-name-concat directory filepath))))))
-    ;; File is expanded, but we might need to re-add the prefix
-    (if (excursion--file-p expanded-file)
-        expanded-file
-      (concat prefix expanded-file))))
+  (cl-destructuring-bind (prefix . path) (excursion--split-prefix filename)
+    (let* ((remote-path? (not (string-empty-p prefix)))
+           (expanded-path
+            (cond
+             ;; If there is no prefix and it's absolute, treat it as a local file
+             ((and (not remote-path?) (file-name-absolute-p path))
+              (excursion--run-stock-handler #'expand-file-name (list path)))
+             ;; If we have prefix and a `~', it might be absolute. Go remote to find out
+             ((and remote-path? (string-prefix-p "~" path))
+              (let ((~expanded (excursion--make-request
+                                (format "*%s|%s" (length path) path))))
+                ;; If it's still not expanded, treat it as relative and just add the user's
+                ;; home dir
+                (if (not (file-name-absolute-p ~expanded))
+                    (concat excursion--user-home-dir ~expanded)
+                  ~expanded)))
+             ;; If there's a prefix and it's absolute, do nothing
+             ((and remote-path? (file-name-absolute-p path)) path)
+             ;; For everything that's left, just fix up the directory
+             (t (file-name-concat
+                 (cond
+                  ;; Always treat prefixed relative paths wrt the user's home dir
+                  ((and remote-path? (not (file-name-absolute-p path)))
+                   excursion--user-home-dir)
+                  ;; If directory is passed, expand it
+                  (directory
+                   (expand-file-name directory))
+                  ;; Use `default-directory' as a last resort
+                  (t (expand-file-name default-directory)))
+                 path))))
+           ;; Run it through again locally to clean up `..'
+           (cleaned-path
+            (if (string-match-p "\\.\\." expanded-path)
+                (excursion--run-stock-handler #'expand-file-name (list expanded-path))
+              expanded-path)))
+      ;; File is expanded, but we might need to re-add the prefix
+      (if (excursion--file-p cleaned-path)
+          cleaned-path
+        (concat prefix cleaned-path)))))
 
 (defun excursion-file-remote-p (filename &optional identification connected)
   "Excursion's file-remote-p"
