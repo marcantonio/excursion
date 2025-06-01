@@ -80,7 +80,7 @@ async fn handle_expand_file_name<'a>(
 ) -> Result<()> {
     assert!(filename.starts_with("~"));
     let expanded = expanduser::expanduser(&filename).unwrap_or_else(|_| Path::new(filename).to_path_buf());
-    let path = expanded.into_os_string();
+    let path = expanded.to_string_lossy();
     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
 }
 

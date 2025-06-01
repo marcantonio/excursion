@@ -235,6 +235,7 @@ dependencies = [
  "bytes",
  "clap",
  "expanduser",
+ "libc",
  "tokio",
  "tokio-test",
  "unix_mode",
