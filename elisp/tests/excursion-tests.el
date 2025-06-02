@@ -37,7 +37,10 @@ Named args:
                      `(ert-deftest ,full-test-name ()
                         ,@setup
                         (let ,bindings
-                          (should (apply ,eq-fn (list (,fn ,@args) ,expected)))))))))
+                          (let ((actual (,fn ,@args))
+                                (expected-value ,expected))
+                            (ert-info ((format "Expected: %S\nActual: %S" expected-value actual))
+                              (should (apply ,eq-fn (list actual expected-value)))))))))))
     `(progn ,@tests)))
 
 (setq load-prefer-newer t)
