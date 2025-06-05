@@ -325,10 +325,6 @@ list."
                           (file-attribute-modification-time
                            (file-attributes filename)))))))))
 
-;; TODO: Finish tests once this runs
-;; (with-temp-buffer
-;;   (set-visited-file-name "/excursion:electron:~/otium")
-;;   (verify-visited-file-modtime))
 ;; (get-file-buffer)
 ;; (make-auto-save-file-name)
 ;; (auto-save-mode)

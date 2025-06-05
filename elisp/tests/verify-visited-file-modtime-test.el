@@ -1,58 +1,90 @@
-(with-temp-buffer
-  (set-visited-file-name "/excursion:electron:~/otium")
-  (verify-visited-file-modtime))
+;;; -*- lexical-binding: t; -*-
 
-(require 'ert)
-(require 'dired)
+(require 'excursion)
 
-(ert-deftest my-verify-visited-file-modtime/non-file-buffer ()
-  "Test with buffer not visiting a file"
-  (with-temp-buffer
-    (should (my-verify-visited-file-modtime))))
+;; Test with buffer not visiting a file
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() t))
+ :suffix "no-visited-file"
+ :fixture-fn (lambda (fn &optional args)
+               (with-temp-buffer
+                 (funcall fn args))))
 
-(ert-deftest my-verify-visited-file-modtime/new-file-buffer ()
-  "Test with new buffer that has never been saved"
-  (with-temp-buffer
-    (set-visited-file-name "unsaved-file.txt")
-    (should (my-verify-visited-file-modtime))))
+;; Test with no recorded modification time
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() t))
+ :suffix "zero-modtime"
+  :fixture-fn (lambda (fn &optional args)
+               (with-temp-buffer
+                 (setq buffer-file-name "/excursion:electron:never-existed-file")
+                 (set-visited-file-modtime 0)
+                 (funcall fn args))))
 
-(ert-deftest my-verify-visited-file-modtime/matching-times ()
-  "Test with file that hasn't changed"
-  (with-temp-file "testfile.txt"
-    (insert "original content"))
-  (with-current-buffer (find-file-noselect "testfile.txt")
-    (should (my-verify-visited-file-modtime))
-    (kill-buffer)))
+;; Test with file that never existed
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() t))
+ :suffix "never-existed"
+ :fixture-fn (lambda (fn &optional args)
+               (with-temp-buffer
+                 (setq buffer-file-name "/excursion:electron:never-existed-file")
+                 (funcall fn args))))
 
-(ert-deftest my-verify-visited-file-modtime/modified-externally ()
-  "Test with file modified outside Emacs"
-  (with-temp-file "testfile.txt"
-    (insert "original content"))
-  (with-current-buffer (find-file-noselect "testfile.txt")
-    (save-buffer)  ; Record initial modtime
-    (with-temp-file "testfile.txt"
-      (insert "modified content"))
-    (should-not (my-verify-visited-file-modtime))
-    (kill-buffer)))
+;; Test with file that has been deleted
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() nil))
+ :suffix "deleted-file"
+ :fixture-fn (lambda (fn &optional args)
+               (with-temp-buffer
+                 (setq buffer-file-name "/excursion:electron:~/deleted-file")
+                 (set-visited-file-modtime '(26340 59827))
+                 (funcall fn args))))
 
-(ert-deftest my-verify-visited-file-modtime/file-deleted ()
-  "Test with file that was deleted after visiting"
-  (let ((filename (make-temp-file "deleteme")))
-    (with-current-buffer (find-file-noselect filename)
-      (delete-file filename)
-      (should-not (my-verify-visited-file-modtime))
-      (kill-buffer))))
+;; Test with existing file and matching modtime
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() t))
+ :suffix "matching-modtime"
+ :fixture-fn (lambda (fn &optional args)
+               (with-temp-buffer
+                 (setq buffer-file-name "/excursion:electron:~/.bashrc")
+                 ;; Set visited time to match actual file modtime
+                 (let ((actual-modtime (file-attribute-modification-time
+                                        (file-attributes "/excursion:electron:~/.bashrc"))))
+                   (set-visited-file-modtime actual-modtime))
+                 (funcall fn args))))
 
-(ert-deftest my-verify-visited-file-modtime/dired-buffer ()
-  "Test with dired buffer (should always return t)"
-  (let ((test-dir (make-temp-file "testdir" t)))
-    (unwind-protect
-        (with-current-buffer (dired-noselect test-dir)
-          (should (my-verify-visited-file-modtime)))
-      (delete-directory test-dir t))))
+;; Test with existing file and mismatched modtime
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() nil))
+ :suffix "mismatched-modtime"
+ :setup ((with-temp-buffer
+           (setq buffer-file-name "/excursion:electron:~/.bashrc")
+           (set-visited-file-modtime '(1 0)))))
 
-(ert-deftest my-verify-visited-file-modtime/nonexistent-file ()
-  "Test with buffer visiting never-existent file"
-  (with-temp-buffer
-    (set-visited-file-name "this-file-does-not-exist.txt")
-    (should (my-verify-visited-file-modtime))))
+;; Test with explicit buffer argument
+(excursion--gen-tests
+ verify-visited-file-modtime
+ (((test-buffer) t))
+ :suffix "explicit-buffer"
+ :setup ((let ((test-buffer (generate-new-buffer "test")))
+           (with-current-buffer test-buffer
+             (setq buffer-file-name "/excursion:electron:~/.bashrc")
+             (let ((actual-modtime (file-attribute-modification-time
+                                   (file-attributes "/excursion:electron:~/.bashrc"))))
+               (set-visited-file-modtime actual-modtime))))))
+
+;; Test dired-like buffer (not visiting file but with non-zero modtime)
+(excursion--gen-tests
+ verify-visited-file-modtime
+ ((() t))
+ :suffix "dired-like"
+ :setup ((with-temp-buffer
+           (setq buffer-file-name nil)
+           (set-visited-file-modtime '(26340 59827)))))
+
+(provide 'verify-visited-file-modtime-test)
