@@ -2,8 +2,8 @@
 
 (require 'cl-lib)
 
-;; TODO: It's hard to see why a test failed because of the `apply'
-(cl-defmacro excursion--gen-tests (fn cases &key suffix setup bindings eq-pred)
+;; TODO: Remove :setup and :bindings
+(cl-defmacro excursion--gen-tests (fn cases &key suffix setup bindings eq-pred fixture-fn)
   "Macro to generate tests for FN against every case in CASES.
 
 Each test case in should be a two-element list of the form:
@@ -22,6 +22,9 @@ Named args:
 
 :eq-pred
   Function to use for equality test with `should'.
+
+:fixture-fn
+  Function to wrap `fn' setup and teardown.
 "
   (let* ((s (symbol-name fn))
          (eq-fn (or eq-pred (symbol-function 'equal)))
@@ -37,7 +40,9 @@ Named args:
                      `(ert-deftest ,full-test-name ()
                         ,@setup
                         (let ,bindings
-                          (let ((actual (,fn ,@args))
+                          (let ((actual ,(if (and fixture-fn (functionp fixture-fn))
+                                             `(,fixture-fn #',fn ,@args)
+                                           `(,fn ,@args)))
                                 (expected-value ,expected))
                             (ert-info ((format "Expected: %S\nActual: %S" expected-value actual))
                               (should (apply ,eq-fn (list actual expected-value)))))))))))
