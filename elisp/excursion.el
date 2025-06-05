@@ -7,6 +7,7 @@
 ;;; insert-file-contents
 ;;; finish locking
 ;;; complete tests
+;;; quoting
 
 ;; For dev
 (let* ((excursion-path (file-name-directory (or load-file-name (buffer-file-name))))
@@ -217,20 +218,20 @@ list."
       (list (or (string-prefix-p "d" (nth 7 result)) ; is dir or symlink
                 (and (string-prefix-p "l" (nth 7 result))
                      (nth 10 result)))
-            (string-to-number (nth 0 result))                   ; num links
-            (string-to-number (nth 1 result))                   ; uid
-            (string-to-number (nth 2 result))                   ; gid
-            (seconds-to-time (string-to-number (nth 3 result))) ; atime
-            (seconds-to-time (string-to-number (nth 4 result))) ; mtime
-            (seconds-to-time (string-to-number (nth 5 result))) ; ctime
-            (string-to-number (nth 6 result))                   ; size
-            (nth 7 result)                                      ; mode string
-            nil                                                 ; unused
-            (string-to-number (nth 8 result))                   ; inode
+            (string-to-number (nth 0 result))                              ; num links
+            (string-to-number (nth 1 result))                              ; uid
+            (string-to-number (nth 2 result))                              ; gid
+            (excursion--seconds-to-time (string-to-number (nth 3 result))) ; atime
+            (excursion--seconds-to-time (string-to-number (nth 4 result))) ; mtime
+            (excursion--seconds-to-time (string-to-number (nth 5 result))) ; ctime
+            (string-to-number (nth 6 result))                              ; size
+            (nth 7 result)                                                 ; mode string
+            nil                                                            ; unused
+            (string-to-number (nth 8 result))                              ; inode
             ;; TODO: This is the actual remote device id which might not be unique. Tramp
             ;; uses -1 plus a unique integer. I don't want to overthink this for now, but
             ;; there's more we can when this is an issue
-            (cons -2 (string-to-number (nth 9 result)))))))      ; device id
+            (cons -2 (string-to-number (nth 9 result)))))))                ; device id
 
 (defun excursion-file-symlink-p (filename)
   "Excursion's file-symlink-p."
@@ -695,6 +696,17 @@ same."
     (dotimes (i 9 total)
       (unless (eq (aref perm i) ?-)
         (setq total (+ total (aref bit-values i)))))))
+
+;; TODO: tests
+(defun excursion--seconds-to-time (s)
+  "Convert seconds in S to a time value and round pico down to a
+multiple of 1000. See https://www.gnu.org/software/emacs/manual/html_mono/elisp.html#Time-of-Day for details."
+  (let* ((time (seconds-to-time s))
+         (pico (nth 3 time)))
+    (list (nth 0 time)                  ; high
+          (nth 1 time)                  ; low
+          (nth 2 time)                  ; mico
+          (- pico (mod pico 1000)))))   ; pico
 
 ;; (let* ((default-directory "/excursion:electron:~/excursion/"))
 ;;   (find-file "/excursion:electron:~/excursion/Cargo.toml"))
