@@ -331,13 +331,13 @@ list."
 ;; (seq-find (lambda (x) (equal x 'auto-save-mode)) minor-mode-list)
 ;; (setq auto-save-default t)
 
-;; TODO: tests
 (defun excursion-set-visited-file-modtime (&optional time)
-  (unless time
-    (setq time
-	  (file-attribute-modification-time
-           (file-attributes (buffer-file-name)))))
-  (excursion--run-stock-handler #'set-visited-file-modtime (list time)))
+  "Excursion's set-visited-file-modtime."
+  (if time
+      (excursion--run-stock-handler #'set-visited-file-modtime (list time))
+    (let* ((file (expand-file-name (buffer-file-name)))
+           (mtime (file-attribute-modification-time (file-attributes file))))
+      (excursion--run-stock-handler #'set-visited-file-modtime (list mtime)))))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-file-truename (filename)

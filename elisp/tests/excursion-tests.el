@@ -61,5 +61,6 @@ Named args:
 (require 'file-remote-p-test)
 (require 'frame-test)
 (require 'utils-test)
+(require 'visited-file-modtime-test)
 
 (provide 'excursion-tests)
