@@ -22,7 +22,7 @@
 (defvar excursion-port 7001)
 (defvar excursion-timeout 2)
 (defvar excursion-directory (concat user-emacs-directory "excursion/"))
-(defvar excursion-auto-save-directory (concat excursion-directory "auto-saves"))
+(defvar excursion-auto-save-directory (concat excursion-directory "auto-saves/"))
 
 (defconst excursion--process-name "excursion")
 
@@ -116,7 +116,6 @@ list."
    ((eq operation 'file-modes) (apply #'excursion-file-modes args))
    ((eq operation 'vc-registered) (apply #'excursion-vc-registered args))
    (t
-    (message "#%s %s" operation args)
     (let ((inhibit-file-name-handlers
            (cons 'excursion-file-handler
                  (and (eq inhibit-file-name-operation operation)
@@ -325,12 +324,6 @@ list."
                           (file-attribute-modification-time
                            (file-attributes filename)))))))))
 
-;; (get-file-buffer)
-;; (make-auto-save-file-name)
-;; (auto-save-mode)
-;; (seq-find (lambda (x) (equal x 'auto-save-mode)) minor-mode-list)
-;; (setq auto-save-default t)
-
 (defun excursion-set-visited-file-modtime (&optional time)
   "Excursion's set-visited-file-modtime."
   (if time
@@ -378,26 +371,25 @@ list."
     (when (not (file-exists-p directory))
       (error "No such file or directory"))))
 
-;; TODO: Finish tests once this runs
 (defun excursion-make-auto-save-file-name ()
-  "Excursion's make-auto-save-file-name. Will create `excursion-auto-save-directory' if needed."
-  (when-let ((auto-save-default)
-             (excursion-auto-save-directory (expand-file-name excursion-auto-save-directory))
-             (filename (expand-file-name (buffer-file-name))))
+  "Excursion's make-auto-save-file-name. Will create
+`excursion-auto-save-directory' if needed."
+  (when-let ((buffer-file-name)
+             (filename (expand-file-name (buffer-file-name)))
+             (excursion-auto-save-directory (expand-file-name excursion-auto-save-directory)))
     (unless (file-exists-p excursion-auto-save-directory)
       (with-file-modes #o0700
         (make-directory excursion-auto-save-directory t)))
-    (concat excursion-auto-save-directory "/" (subst-char-in-string ?/ ?# filename) "#")))
+    (concat
+     (if (string-suffix-p "/" excursion-auto-save-directory)
+         excursion-auto-save-directory
+       (concat excursion-auto-save-directory "/"))
+     "#" (subst-char-in-string ?/ ?! filename) "#")))
 
-;; (setq auto-save-default t)
-;; ;;(make-auto-save-file-name)
-;; (excursion-make-auto-save-file)
 ;; (lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
-
 ;; (excursion-make-lock-file-name "/excursion:electron:/home/mas/excursion/Cargo.toml")
 ;; (excursion--get-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
 ;; (excursion-file-locked-p "/excursion:electron:/home/mas/excursion/Cargo.toml")
-
 ;; (excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
 
 (defun excursion-lock-file (file)

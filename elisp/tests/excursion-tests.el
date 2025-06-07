@@ -60,6 +60,7 @@ Named args:
 (require 'file-locks-test)
 (require 'file-remote-p-test)
 (require 'frame-test)
+(require 'make-auto-save-file-name-test)
 (require 'utils-test)
 (require 'visited-file-modtime-test)
 
