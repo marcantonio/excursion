@@ -61,6 +61,7 @@ Named args:
 (require 'file-remote-p-test)
 (require 'frame-test)
 (require 'make-auto-save-file-name-test)
+(require 'make-symbolic-link-test)
 (require 'utils-test)
 (require 'visited-file-modtime-test)
 

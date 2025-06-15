@@ -4,8 +4,9 @@
   '((?^  . Data)
     (?!  . Err)
     (?\( . Open)
-    (?&   . Save)
-    (?:  . Stat)))
+    (?&  . Save)
+    (?:  . Stat)
+    (?>  . Sym)))
 
 (cl-defstruct (excursion--frame
                (:constructor excursion--frame-create))

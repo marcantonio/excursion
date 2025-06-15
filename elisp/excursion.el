@@ -115,6 +115,7 @@ list."
    ((eq operation 'file-newer-than-file-p) (apply #'excursion-file-newer-than-file-p args))
    ((eq operation 'file-modes) (apply #'excursion-file-modes args))
    ((eq operation 'vc-registered) (apply #'excursion-vc-registered args))
+   ((eq operation 'make-symbolic-link) (apply #'excursion-make-symbolic-link args))
    (t
     (let ((inhibit-file-name-handlers
            (cons 'excursion-file-handler
@@ -403,6 +404,36 @@ list."
 
 ;;(excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
 ;;(lock-file "/home/mas/Code/excursion/elisp/Makefile")
+
+(defun excursion-make-symbolic-link (target linkname &optional ok-if-already-exists)
+  "Excursion's make-symbolic-link."
+  (if (not (excursion--file-p linkname))
+      (excursion--run-stock-handler
+       #'make-symbolic-link (list target linkname ok-if-already-exists))
+    ;; Go remote as indicated by `linkname'. If they are both remote and the same host,
+    ;; use the local file name for `target', othewise use whatever's there. Always use the
+    ;; local part of `linkname'
+    (let ((remote-target (expand-file-name
+                          (if (excursion--remote-equal-p target linkname)
+                              (excursion--parse-filename target 'file)
+                            target)))
+          (remote-linkname (expand-file-name
+                            (excursion--parse-filename linkname 'file))))
+      ;; Handle file already exists
+      (when (and (file-exists-p linkname)
+                 (or (not ok-if-already-exists)
+                     ;; An int here means interactive is ok
+                     (and (numberp ok-if-already-exists)
+		          (not (yes-or-no-p
+			        (format "File %s already exists; make it a link anyway?"
+			                remote-linkname))))))
+        (signal 'file-already-exists linkname))
+      (equal "1" (excursion--make-request
+                  (format ">%s;%s|%s%s"
+                          (length remote-target)
+                          (length remote-linkname)
+                          remote-target
+                          remote-linkname))))))
 
 (defun excursion-file-locked-p (file)
   "Excursion's file-locked-p."
