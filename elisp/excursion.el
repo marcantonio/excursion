@@ -25,6 +25,13 @@
 (defvar excursion-auto-save-directory (concat excursion-directory "auto-saves/"))
 
 (defconst excursion--process-name "excursion")
+(defconst excursion--lock-file-info-regexp
+  ;; USER@HOST.PID[:BOOT_TIME]
+  (rx bos (group (+ nonl))
+      "@" (group (+ nonl))
+      "." (group (+ digit))
+      (? ":" (+ digit)) eos)
+  "The format of a lock file.")
 
 (defvar excursion--data nil)
 (defvar excursion--prefix "/excursion:")
@@ -372,6 +379,7 @@ list."
     (when (not (file-exists-p directory))
       (error "No such file or directory"))))
 
+;; todo: uncomment test
 (defun excursion-make-auto-save-file-name ()
   "Excursion's make-auto-save-file-name. Will create
 `excursion-auto-save-directory' if needed."
@@ -386,24 +394,6 @@ list."
          excursion-auto-save-directory
        (concat excursion-auto-save-directory "/"))
      "#" (subst-char-in-string ?/ ?! filename) "#")))
-
-;; (lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
-;; (excursion-make-lock-file-name "/excursion:electron:/home/mas/excursion/Cargo.toml")
-;; (excursion--get-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
-;; (excursion-file-locked-p "/excursion:electron:/home/mas/excursion/Cargo.toml")
-;; (excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
-
-(defun excursion-lock-file (file)
-  (unless (eq (file-locked-p file) t) ; t means we own the lock
-    (when (and buffer-file-truename
-               (not (verify-visited-file-modtime))
-               (file-exists-p file))
-      (message ">>%s" buffer-file-truename))))
-
-(defun excursion-unlock-file (file))
-
-;;(excursion-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
-;;(lock-file "/home/mas/Code/excursion/elisp/Makefile")
 
 (defun excursion-make-symbolic-link (target linkname &optional ok-if-already-exists)
   "Excursion's make-symbolic-link."
@@ -434,19 +424,67 @@ list."
                           remote-target
                           remote-linkname))))))
 
+(defun excursion-lock-file (file)
+  (catch 'abort-lock
+    ;; Bail if we own the lock
+    (when (eq (file-locked-p file) t)
+      (throw 'abort-lock nil))
+
+    ;; Check if the file has changed on disk
+    (when (and buffer-file-truename
+               (not (verify-visited-file-modtime))
+               (file-exists-p file))
+      ;; Call this directly instead of via `userlock--ask-user-about-supersession-threat'
+      ;; so we don't check remote file contents.
+      ;; TODO: Try checking file size or a checksum as a compromise
+      (ask-user-about-supersession-threat file))
+
+    ;; Check the lock file info and prompt
+    (when-let ((info (excursion--get-lock-file file))
+	       (match (string-match excursion--lock-file-info-regexp info)))
+      (unless (ask-user-about-lock
+	       file (format
+		     "%s@%s (pid %s)" (match-string 1 info)
+		     (match-string 2 info) (match-string 3 info)))
+        ;; User said proceed
+	(throw 'abort-lock nil)))
+
+    ;; Go ahead with the lock
+    (when-let ((lockname (make-lock-file-name file))
+	       ;; See `excursion--lock-file-info-regexp' for format
+	       (info (format
+	              "%s@%s.%s" (user-login-name) (system-name)
+	              (emacs-pid))))
+      (let (create-lockfiles signal-hook-function)
+        (make-symbolic-link info lockname 'ok-if-already-exists)))))
+
+(defun excursion-unlock-file (file))
+
+;; (with-temp-buffer
+;;   (setq filename "/excursion:electron:~/excursion/Cargo.toml")
+;;   (setq buffer-file-name filename)
+;;   (setq buffer-file-truename (abbreviate-file-name (file-truename filename)))
+;;   ;; Set visited time to match actual file modtime
+;;   (let ((actual-modtime (file-attribute-modification-time
+;;                          (file-attributes filename))))
+;;     ;;(set-visited-file-modtime '(1 0))
+;;     (set-visited-file-modtime actual-modtime))
+;;   (excursion-lock-file filename))
+
 (defun excursion-file-locked-p (file)
   "Excursion's file-locked-p."
   (save-match-data
     (when-let ((lock-info (excursion--get-lock-file file))
-               (re "^\\([[:alnum:]_-]+\\)@\\([[:alnum:]_.-]+\\)\\.\\([0-9]+\\)$")
+               (re excursion--lock-file-info-regexp)
                (_ (string-match re lock-info)))
       ;; Return t if locked by me, or the user with the lock
       (or
-       (and (equal (match-string 1 lock-info) (user-login-name)) ; user
-            (equal (match-string 2 lock-info) (system-name))     ; host
-            (equal (match-string 3 lock-info) (emacs-pid)))      ; pid
+       (and (equal (match-string 1 lock-info) (user-login-name))               ; user
+            (equal (match-string 2 lock-info) (system-name))                   ; host
+            (equal (string-to-number (match-string 3 lock-info)) (emacs-pid))) ; pid
        (match-string 1 lock-info)))))
 
+;; TODO: tests
 (defun excursion-make-lock-file-name (file)
   "Excursion's make-lock-file-name."
   ;; files.el doesn't seem to check these, but adding here anyway for tramp compat
@@ -454,11 +492,9 @@ list."
        (not remote-file-name-inhibit-locks)
        (excursion--run-stock-handler #'make-lock-file-name (list file))))
 
-;;(excursion-make-lock-file-name "/excursion:electron:/home/mas/excursion/Cargo.toml")
-;;(excursion--get-lock-file "/excursion:electron:/home/mas/excursion/Cargo.toml")
-
 (defun excursion--get-lock-file (file)
-  "Get lock file info for FILE or return nil."
+  "Get lock file info for FILE or return nil. We don't support
+non-symlinked lock files yet."
   (file-symlink-p (make-lock-file-name file)))
 
 (defun excursion-file-in-directory-p (file dir)
