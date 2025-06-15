@@ -413,10 +413,9 @@ list."
     ;; Go remote as indicated by `linkname'. If they are both remote and the same host,
     ;; use the local file name for `target', othewise use whatever's there. Always use the
     ;; local part of `linkname'
-    (let ((remote-target (expand-file-name
-                          (if (excursion--remote-equal-p target linkname)
-                              (excursion--parse-filename target 'file)
-                            target)))
+    (let ((remote-target (if (excursion--remote-equal-p target linkname)
+                             (expand-file-name (excursion--parse-filename target 'file))
+                           target))
           (remote-linkname (expand-file-name
                             (excursion--parse-filename linkname 'file))))
       ;; Handle file already exists

@@ -68,6 +68,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
             Save => todo!(),
             Stat => handle_stat(&mut connection, &segments[0]).await?,
             Stat2 => handle_stat2(&mut connection, &segments).await?,
+            Symlink => handle_symlink(&mut connection, &segments).await?,
             _ => unimplemented!(),
         }
     }
@@ -209,7 +210,7 @@ async fn handle_stat2<'a>(
     let [filename, ask]: [&str; 2] = params.try_into().map_err(|_| "handle_stat2: bad segment")?;
     let path = Path::new(filename);
     let p = if match ask {
-        "e" => path.exists(),
+        "e" => tokio::fs::metadata(path).await.is_ok(),
         "r" => is_readable(path),
         "w" => is_writable(path),
         _ => todo!(),
@@ -255,4 +256,17 @@ fn is_writable<P: AsRef<Path>>(path: P) -> bool {
     }
 
     false
+}
+
+async fn handle_symlink<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
+) -> Result<()> {
+    let [target, link]: [&str; 2] = params.try_into().map_err(|_| "handle_symlink: bad segment")?;
+    if tokio::fs::symlink_metadata(&link).await.is_ok() {
+        tokio::fs::remove_file(&link).await?;
+    }
+    match tokio::fs::symlink(target, link).await {
+        Ok(_) => connection.write_frame(Frame::new(FrameType::Data, b"1", &[1])).await,
+        Err(e) => connection.send_err(Box::new(e)).await,
+    }
 }

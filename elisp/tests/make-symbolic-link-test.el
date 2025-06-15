@@ -55,7 +55,7 @@
         (delete-file linkname)))))
 
 (ert-deftest make-symbolic-link-remote-linkname-test ()
-  (let ((target "/home/mas/Code/excursion/Cargo.toml")
+  (let ((target "foo")
         (linkname "/excursion:electron:/home/mas/excursion/Cargo.ln"))
     (unwind-protect
         (progn

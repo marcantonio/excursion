@@ -75,6 +75,7 @@ pub enum FrameType {
     Save,
     Stat,
     Stat2,
+    Symlink,
 }
 
 impl TryFrom<u8> for FrameType {
@@ -89,6 +90,7 @@ impl TryFrom<u8> for FrameType {
             b'&' => Ok(Self::Save),
             b':' => Ok(Self::Stat),
             b'_' => Ok(Self::Stat2),
+            b'>' => Ok(Self::Symlink),
             b'!' => Ok(Self::Err),
             _ => Err("invalid FrameType"),
         }
@@ -108,6 +110,7 @@ impl Display for FrameType {
                 Self::Save => '&',
                 Self::Stat => ':',
                 Self::Stat2 => '_',
+                Self::Symlink => '>',
                 Self::Err => '!',
             }
         )
