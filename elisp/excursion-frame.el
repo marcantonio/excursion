@@ -4,6 +4,7 @@
   '((?^  . Data)
     (?!  . Err)
     (?\( . Open)
+    (?-  . Rm)
     (?&  . Save)
     (?:  . Stat)
     (?>  . Sym)))

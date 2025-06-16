@@ -123,6 +123,7 @@ list."
    ((eq operation 'file-modes) (apply #'excursion-file-modes args))
    ((eq operation 'vc-registered) (apply #'excursion-vc-registered args))
    ((eq operation 'make-symbolic-link) (apply #'excursion-make-symbolic-link args))
+   ((eq operation 'delete-file) (apply #'excursion-delete-file args))
    (t
     (let ((inhibit-file-name-handlers
            (cons 'excursion-file-handler
@@ -214,8 +215,8 @@ list."
 
 (defun excursion-file-attributes (filename &optional id-format)
   "Excursion's file-attributes"
-  (let* ((filepath (cdr (excursion--split-prefix
-                         (expand-file-name filename))))
+  (let* ((filepath (expand-file-name
+                    (cdr (excursion--split-prefix filename))))
          (result (excursion--make-request
                   (format ":%s|%s"
                           (length filepath)
@@ -312,7 +313,7 @@ list."
 
 (defun excursion--check-file (op filename)
   "Calls stat2 with OP on FILENAME."
-  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
+  (let* ((filepath (expand-file-name (cdr (excursion--split-prefix filename))))
          (result (excursion--make-request
                   (format "_%s;1|%s%s" (length filepath) filepath op))))
     (string= result "1")))
@@ -379,7 +380,6 @@ list."
     (when (not (file-exists-p directory))
       (error "No such file or directory"))))
 
-;; todo: uncomment test
 (defun excursion-make-auto-save-file-name ()
   "Excursion's make-auto-save-file-name. Will create
 `excursion-auto-save-directory' if needed."
@@ -404,10 +404,9 @@ list."
     ;; use the local file name for `target', othewise use whatever's there. Always use the
     ;; local part of `linkname'
     (let ((remote-target (if (excursion--remote-equal-p target linkname)
-                             (expand-file-name (excursion--parse-filename target 'file))
+                             (excursion--parse-filename (expand-file-name target) 'file)
                            target))
-          (remote-linkname (expand-file-name
-                            (excursion--parse-filename linkname 'file))))
+          (remote-linkname (excursion--parse-filename (expand-file-name linkname) 'file)))
       ;; Handle file already exists
       (when (and (file-exists-p linkname)
                  (or (not ok-if-already-exists)
@@ -424,6 +423,7 @@ list."
                           remote-target
                           remote-linkname))))))
 
+;; TODO: tests
 (defun excursion-lock-file (file)
   (catch 'abort-lock
     ;; Bail if we own the lock
@@ -458,18 +458,13 @@ list."
       (let (create-lockfiles signal-hook-function)
         (make-symbolic-link info lockname 'ok-if-already-exists)))))
 
-(defun excursion-unlock-file (file))
-
-;; (with-temp-buffer
-;;   (setq filename "/excursion:electron:~/excursion/Cargo.toml")
-;;   (setq buffer-file-name filename)
-;;   (setq buffer-file-truename (abbreviate-file-name (file-truename filename)))
-;;   ;; Set visited time to match actual file modtime
-;;   (let ((actual-modtime (file-attribute-modification-time
-;;                          (file-attributes filename))))
-;;     ;;(set-visited-file-modtime '(1 0))
-;;     (set-visited-file-modtime actual-modtime))
-;;   (excursion-lock-file filename))
+;; TODO: tests
+(defun excursion-unlock-file (file)
+  "Excursion's unlock-file."
+  (when-let ((lockfile (make-lock-file-name file)))
+    (condition-case err
+        (delete-file lockfile)
+      (error 'userlock--handle-unlock-error err))))
 
 (defun excursion-file-locked-p (file)
   "Excursion's file-locked-p."
@@ -496,6 +491,17 @@ list."
   "Get lock file info for FILE or return nil. We don't support
 non-symlinked lock files yet."
   (file-symlink-p (make-lock-file-name file)))
+
+;; TODO: tests
+(defun excursion-delete-file (file &optional trash)
+  "Excursion's delete-file."
+  (let ((file (cdr (excursion--split-prefix (expand-file-name file)))))
+    (if (and trash delete-by-moving-to-trash)
+        (signal 'unimplemented "Excursion doesn't delete to trash")
+      (condition-case err
+          (equal "0" (excursion--make-request (format "-%s|%s" (length file) file)))
+        (error
+         (signal 'file-error (error-message-string err)))))))
 
 (defun excursion-file-in-directory-p (file dir)
   "Excursion's file-in-directory-p."
@@ -679,6 +685,7 @@ process or FILE is non-nil."
 
 ;;; Util
 
+;; TODO: Wrappers around this for parts
 (defun excursion--split-prefix (str &optional required)
   "Splits STR into a prefix and filepath and returns them as a
 cons. If there is no prefix, the car will be `nil' unless

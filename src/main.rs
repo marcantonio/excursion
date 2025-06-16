@@ -65,6 +65,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
             DirList => handle_dir_list(&mut connection, &segments).await?,
             ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
             Open => handle_open(&mut connection, &segments[0]).await?,
+            Rm => handle_rm(&mut connection, &segments[0]).await?,
             Save => todo!(),
             Stat => handle_stat(&mut connection, &segments[0]).await?,
             Stat2 => handle_stat2(&mut connection, &segments).await?,
@@ -269,4 +270,15 @@ async fn handle_symlink<'a>(
         Ok(_) => connection.write_frame(Frame::new(FrameType::Data, b"1", &[1])).await,
         Err(e) => connection.send_err(Box::new(e)).await,
     }
+}
+
+async fn handle_rm<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
+) -> Result<()> {
+    if let Err(e) = tokio::fs::remove_file(filename).await {
+        if e.kind() != io::ErrorKind::NotFound {
+            return connection.send_err(Box::new(e)).await;
+        }
+    }
+    connection.write_frame(Frame::new(FrameType::Data, b"1", &[1])).await
 }
