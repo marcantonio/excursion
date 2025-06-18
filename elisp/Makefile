@@ -10,7 +10,6 @@ test: test-env-tunnel
 	echo "### Running tests (endpoint = $(TEST_ENDPOINT))"; \
 	TEST_ENDPOINT=$(TEST_ENDPOINT) \
 	$(EMACS) --batch -L . -L $(TEST_DIR) \
-	         --eval "(setq excursion-test-endpoint \"$(TEST_ENDPOINT)\")" \
 	         -l excursion-tests.el \
 		 --eval '(ert-run-tests-batch-and-exit "$(MATCH)")'; \
 	status=$$?; \
@@ -21,7 +20,6 @@ test-only:
 	echo "### Running tests (endpoint = $(TEST_ENDPOINT))"; \
 	TEST_ENDPOINT=$(TEST_ENDPOINT) \
 	$(EMACS) --batch -L . -L $(TEST_DIR) \
-	         --eval "(setq excursion-test-endpoint \"$(TEST_ENDPOINT)\")" \
 	         -l excursion-tests.el \
 		 --eval '(ert-run-tests-batch-and-exit "$(MATCH)")';
 
