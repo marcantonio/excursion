@@ -5,7 +5,6 @@
 
 ;;; Add initial cache call
 ;;; insert-file-contents
-;;; finish locking
 ;;; complete tests
 ;;; quoting
 
@@ -43,6 +42,13 @@
   (setq file-name-handler-alist
         (rassq-delete-all 'excursion-file-handler file-name-handler-alist))
   (add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler)))
+
+;; Override endpoint for test runner
+(let ((test-endpoint (getenv "TEST_ENDPOINT")))
+  (when test-endpoint
+    (cl-destructuring-bind (host port) (split-string test-endpoint ":")
+      (setq excursion-host host)
+      (setq excursion-port port))))
 
 ;;; Commands
 

@@ -1,1 +1,3 @@
 /target
+elisp/tests/remote/remote_home
+elisp/tests/remote/emacsuser*
