@@ -1,12 +1,12 @@
 EMACS         := emacs
-TEST_DIR      := $(shell pwd)/tests
 MATCH         ?=
-REMOTE_DIR    := tests/remote
+TEST_DIR      := $(shell pwd)/tests
+REMOTE_DIR    := $(TEST_DIR)/remote_env
 TEST_ENDPOINT := localhost:17001
 
 .PHONY: test test-only test-%
 
-test: test-env-tunnel
+test: test-env-up
 	echo "### Running tests (endpoint = $(TEST_ENDPOINT))"; \
 	TEST_ENDPOINT=$(TEST_ENDPOINT) \
 	$(EMACS) --batch -L . -L $(TEST_DIR) \

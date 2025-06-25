@@ -5,9 +5,9 @@ RUN apt-get update && \
         openssh-server ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /var/run/sshd && echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
+RUN mkdir /var/run/sshd
 
-RUN useradd -m -s /bin/bash emacsuser
+RUN useradd -m -s /bin/bash user1
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

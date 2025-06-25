@@ -1,7 +1,9 @@
 SHELL       := /usr/bin/env bash
-USER        := emacsuser
+USER        := user1
 BIN	    := excursion
 REMOTE_HOME := remote_home
+OWNER       := $(shell id -u):$(shell id -g)
+MOUNT_PATH  := /home/$(USER)
 REPO_ROOT   := $(shell git -C $(CURDIR) rev-parse --show-toplevel)
 FWD_PORT    := 17001
 
@@ -12,14 +14,13 @@ env-key:
 
 env-cargo-build:
 	cargo build --manifest-path $(REPO_ROOT)/Cargo.toml
-	@mkdir -p $(REMOTE_HOME)
+	mkdir -p $(REMOTE_HOME)
 	cp $(REPO_ROOT)/target/debug/$(BIN) $(REMOTE_HOME)
 
 env-up: env-key env-cargo-build
 	BIN_NAME=$(BIN) docker compose up -d --build
+	ssh -fNT -i $(USER)_key -p 2222 -L$(FWD_PORT):localhost:7001 $(USER)@localhost
 
 env-down:
+	- docker compose exec excursion-remote chown -R $(OWNER) $(MOUNT_PATH) 2>/dev/null || true
 	docker compose down
-
-env-tunnel: env-up
-	ssh -fNT -i $(USER)_key -p 2222 -L$(FWD_PORT):localhost:7001 $(USER)@localhost

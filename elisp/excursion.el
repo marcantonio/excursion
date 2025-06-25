@@ -45,6 +45,10 @@
 
 ;; Override endpoint for test runner
 (let ((test-endpoint (getenv "TEST_ENDPOINT")))
+  ;;; XXX
+  (setq test-endpoint "localhost:17001")
+  (setq excursion--prefix "/excursion:localhost#17001:")
+  (setq excursion--user-home-dir "/home/user1/")
   (when test-endpoint
     (cl-destructuring-bind (host port) (split-string test-endpoint ":")
       (setq excursion-host host)

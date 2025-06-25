@@ -6,8 +6,8 @@ services:
     ports:
       - "2222:22"
     volumes:
-      - ./remote_home:/home/emacsuser
-      - ./emacsuser_key.pub:/tmp/emacsuser_key.pub:ro
+      - ./remote_home:/home/user1
+      - ./user1_key.pub:/tmp/user1_key.pub:ro
     environment:
       - BIN_NAME
     tty: true
