@@ -4,20 +4,22 @@
 
 (ert-deftest make-auto-save-file-name-test ()
   (with-temp-buffer
-    (set-visited-file-name "/excursion:electron:foo")
+    (set-visited-file-name "/excursion:localhost#17001:foo")
     (set-buffer-modified-p nil)
-    (should (equal (make-auto-save-file-name)
+    (should (equal (excursion-make-auto-save-file-name)
                    (concat (expand-file-name excursion-auto-save-directory)
-                           "#!excursion:electron:!home!mas!foo#")))))
+                           "#!excursion:localhost#17001:!home!user1!foo#")))))
 
 (ert-deftest make-auto-save-file-name-no-trailing-/-test ()
   (with-temp-buffer
-    (set-visited-file-name "/excursion:electron:foo")
+    (set-visited-file-name "/excursion:localhost#17001:foo")
     (set-buffer-modified-p nil)
-    (let ((excursion-auto-save-directory "bar"))
-      (should (equal (make-auto-save-file-name)
-                     (concat (expand-file-name excursion-auto-save-directory)
-                             "/#!excursion:electron:!home!mas!foo#"))))))
+    (let* ((excursion-auto-save-directory (concat excursion-auto-save-directory "/test"))
+           (success? (should (equal (excursion-make-auto-save-file-name)
+                                    (concat (expand-file-name excursion-auto-save-directory)
+                                            "/#!excursion:localhost#17001:!home!user1!foo#")))))
+      (delete-directory excursion-auto-save-directory)
+      success?)))
 
 ;; I don't think this could ever happen
 (ert-deftest make-auto-save-file-name-no-file-test ()

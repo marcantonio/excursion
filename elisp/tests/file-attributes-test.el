@@ -38,7 +38,8 @@
     (((concat test-root-dir "dir1")) t)
     (("/excursion:localhost#17001:/etc/shadow") nil)
     (("/excursion:localhost#17001:not-a-file") nil)
-    (((concat test-root-dir "baz")) nil)))
+    (((concat test-root-dir "baz")) t)
+    (((concat test-root-dir "qux")) nil)))
 
   (excursion--gen-tests
    excursion-file-writable-p
@@ -53,10 +54,6 @@
    ((((concat test-root-dir "dir1")) t)
     (("/excursion:localhost#17001:/root") t)
     (("/excursion:localhost#17001:not-a-file") nil)))
-
-  ;; (excursion-file-truename "/excursion:localhost#17001:/home/user1/test_root/file-attributes/bar")
-  ;; (file-truename "/home/mas/Code/excursion/elisp/tests/remote_env/remote_home/test_root/file-attributes/bar")
-  ;; (file-truename "remote_env/remote_home/test_root/file-attributes/bar")
 
   (excursion--gen-tests
    excursion-file-truename

@@ -47,7 +47,7 @@
 (let ((test-endpoint (getenv "TEST_ENDPOINT")))
   ;;; XXX
   (setq test-endpoint "localhost:17001")
-  (setq excursion--prefix "/excursion:localhost#17001:")
+  (setq excursion--prefix "/excursion:")
   (setq excursion--user-home-dir "/home/user1/")
   (when test-endpoint
     (cl-destructuring-bind (host port) (split-string test-endpoint ":")
@@ -518,7 +518,7 @@ non-symlinked lock files yet."
 
 (defun excursion-file-equal-p (file1 file2)
   "Excursion's file-equal-p."
-  (when (excursion--remote-equal-p file1 file2)
+  (when (excursion--remote-equal-p file1 file2) ; avoid further calls if the remotes are wrong
     (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
 
 (defun excursion-substitute-in-file-name (filename)
@@ -564,7 +564,7 @@ non-symlinked lock files yet."
                         "*excursion*"
                         excursion-host
                         excursion-port)))
-          (process-put process 'host "electron") ; TODO: make this excursion-host
+          (process-put process 'host excursion-host)
           (process-put process 'results nil)
           (setq excursion--data "")
           (set-process-filter process 'excursion--filter)
