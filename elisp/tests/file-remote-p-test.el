@@ -2,28 +2,29 @@
 
 (require 'excursion)
 
-(excursion--gen-tests
- file-remote-p
- ((("/excursion:electron:main.rs") "/excursion:electron:")
-  (("/excursion:electron:main.rs" 'method) "excursion")
-  (("/excursion:electron:main.rs" 'host) "electron")
-  (("/excursion:electron:main.rs" 'method t) "excursion")
-  (("/excursion:electron:main.rs" 'host t) "electron")
-  (("/excursion:electron:main.rs" 'foo) "/excursion:electron:")
-  (("/excursion:electron:main.rs" 'foo t) "/excursion:electron:"))
- :suffix "connected"
- :setup ((excursion--remote-connection)))
+(let ((test-root-dir "/excursion:localhost#17001:~/test_root/"))
+  (excursion--gen-tests
+   excursion-file-remote-p
+   ((((concat test-root-dir "foo")) "/excursion:localhost#17001:")
+    (((concat test-root-dir "foo") 'method) "excursion")
+    (((concat test-root-dir "foo") 'host) "localhost#17001")
+    (((concat test-root-dir "foo") 'method t) "excursion")
+    (((concat test-root-dir "foo") 'host t) "localhost#17001")
+    (((concat test-root-dir "foo") 'foo) "/excursion:localhost#17001:")
+    (((concat test-root-dir "foo") 'foo t) "/excursion:localhost#17001:"))
+   :suffix "connected"
+   :setup ((excursion--remote-connection)))
 
-(excursion--gen-tests
- file-remote-p
- ((("/excursion:electron:main.rs") "/excursion:electron:")
-  (("/excursion:electron:main.rs" 'method) "excursion")
-  (("/excursion:electron:main.rs" 'host) "electron")
-  (("/excursion:electron:main.rs" 'method t))
-  (("/excursion:electron:main.rs" 'host t))
-  (("/excursion:electron:main.rs" 'foo) "/excursion:electron:")
-  (("/excursion:electron:main.rs" 'foo t)))
- :suffix "not-connected"
- :setup ((excursion-terminate)))
+  (excursion--gen-tests
+   excursion-file-remote-p
+   ((((concat test-root-dir "foo")) "/excursion:localhost#17001:")
+    (((concat test-root-dir "foo") 'method) "excursion")
+    (((concat test-root-dir "foo") 'host) "localhost#17001")
+    (((concat test-root-dir "foo") 'method t))
+    (((concat test-root-dir "foo") 'host t))
+    (((concat test-root-dir "foo") 'foo) "/excursion:localhost#17001:")
+    (((concat test-root-dir "foo") 'foo t)))
+   :suffix "not-connected"
+   :setup ((excursion-terminate))))
 
 (provide 'file-remote-p-test)

@@ -1,7 +1,8 @@
 ;;; -*- lexical-binding: t; -*-
 
 (defconst excursion--frame-types
-  '((?^  . Data)
+  '((?<  . Canonicalize)
+    (?^  . Data)
     (?!  . Err)
     (?\( . Open)
     (?-  . Rm)

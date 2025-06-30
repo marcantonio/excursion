@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::ffi::CString;
+use std::ffi::OsString;
 use std::fs;
 use std::fs::read_link;
 use std::io;
@@ -6,6 +8,7 @@ use std::os::linux::fs::MetadataExt;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt as _;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -62,6 +65,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
         let segments =
             frame.iter_segments().map(|s| std::str::from_utf8(s).unwrap_or("")).collect::<Vec<_>>();
         match frame.ty {
+            Canonicalize => handle_canonicalize(&mut connection, &segments[0]).await?,
             DirList => handle_dir_list(&mut connection, &segments).await?,
             ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
             Open => handle_open(&mut connection, &segments[0]).await?,
@@ -281,4 +285,58 @@ async fn handle_rm<'a>(
         }
     }
     connection.write_frame(Frame::new(FrameType::Data, b"1", &[1])).await
+}
+
+async fn handle_canonicalize<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
+) -> Result<()> {
+    match canonicalize_missing_ok(filename).await {
+        Ok(path) => {
+            let path_bytes = path.as_os_str().as_bytes();
+            connection.write_frame(Frame::new(FrameType::Data, path_bytes, &[path_bytes.len()])).await
+        },
+        Err(e) => {
+            return connection.send_err(Box::new(e)).await;
+        },
+    }
+}
+
+async fn canonicalize_missing_ok<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
+    let mut components: Vec<OsString> =
+        path.as_ref().components().map(|c| c.as_os_str().to_owned()).collect();
+
+    let mut resolved = if path.as_ref().is_absolute() {
+        PathBuf::from(Component::RootDir.as_os_str())
+    } else {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "path must be absolute"));
+    };
+
+    let mut visited = HashSet::new();
+    while let Some(segment) = components.first().cloned() {
+        components.remove(0);
+        resolved.push(&segment);
+
+        match tokio::fs::symlink_metadata(&resolved).await {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                // Detect symlink loops
+                if !visited.insert(resolved.clone()) {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "symlink loop detected"));
+                }
+
+                let link_target = tokio::fs::read_link(&resolved).await?;
+                // Replace the symlink
+                resolved.pop();
+                resolved = if link_target.is_absolute() { link_target } else { resolved.join(link_target) };
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                // Broken link so just append the rest and bail
+                for tail in components {
+                    resolved.push(tail);
+                }
+                break;
+            },
+            _ => {},
+        }
+    }
+    Ok(resolved)
 }

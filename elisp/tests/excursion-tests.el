@@ -58,11 +58,11 @@ Named args:
 (require 'file-equal-p-test)
 (require 'file-in-directory-p-test)
 (require 'file-locks-test)
+(require 'file-modtime-test)
 (require 'file-remote-p-test)
 (require 'frame-test)
 (require 'make-auto-save-file-name-test)
 (require 'make-symbolic-link-test)
 (require 'utils-test)
-(require 'visited-file-modtime-test)
 
 (provide 'excursion-tests)

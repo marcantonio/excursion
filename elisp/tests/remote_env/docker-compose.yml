@@ -1,0 +1,13 @@
+services:
+  excursion-remote:
+    image: excursion-remote
+    build: .
+    container_name: excursion-remote-test-env
+    ports:
+      - "2222:22"
+    volumes:
+      - ./remote_home:/home/user1
+      - ./user1_key.pub:/tmp/user1_key.pub:ro
+    environment:
+      - BIN_NAME
+    tty: true

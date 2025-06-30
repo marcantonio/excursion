@@ -5,7 +5,6 @@
 
 ;;; Add initial cache call
 ;;; insert-file-contents
-;;; finish locking
 ;;; complete tests
 ;;; quoting
 
@@ -43,6 +42,17 @@
   (setq file-name-handler-alist
         (rassq-delete-all 'excursion-file-handler file-name-handler-alist))
   (add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler)))
+
+;; Override endpoint for test runner
+(let ((test-endpoint (getenv "TEST_ENDPOINT")))
+  ;;; XXX
+  (setq test-endpoint "localhost:17001")
+  (setq excursion--prefix "/excursion:")
+  (setq excursion--user-home-dir "/home/user1/")
+  (when test-endpoint
+    (cl-destructuring-bind (host port) (split-string test-endpoint ":")
+      (setq excursion-host host)
+      (setq excursion-port port))))
 
 ;;; Commands
 
@@ -215,8 +225,7 @@ list."
 
 (defun excursion-file-attributes (filename &optional id-format)
   "Excursion's file-attributes"
-  (let* ((filepath (expand-file-name
-                    (cdr (excursion--split-prefix filename))))
+  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
          (result (excursion--make-request
                   (format ":%s|%s"
                           (length filepath)
@@ -313,7 +322,7 @@ list."
 
 (defun excursion--check-file (op filename)
   "Calls stat2 with OP on FILENAME."
-  (let* ((filepath (expand-file-name (cdr (excursion--split-prefix filename))))
+  (let* ((filepath (cdr (excursion--split-prefix (expand-file-name filename))))
          (result (excursion--make-request
                   (format "_%s;1|%s%s" (length filepath) filepath op))))
     (string= result "1")))
@@ -344,16 +353,15 @@ list."
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-file-truename (filename)
   "Excursion's file-truename."
-  (let* ((prefix (car (excursion--split-prefix filename t)))
-         (f (file-attribute-type (file-attributes filename))))
-    (if (symbolp f)
-        (expand-file-name filename)
-      (concat prefix f))))
+  (cl-destructuring-bind (prefix . path)
+      (excursion--split-prefix (expand-file-name filename) t)
+    (concat prefix (excursion--make-request
+                    (format "<%s|%s" (length path) path)))))
 
 (defun excursion-file-directory-p (filename)
   "Excursion's file-directory-p."
-  (let* ((f (file-attribute-type (file-attributes filename))))
-    (and (symbolp f) f)))
+  (let* ((f (file-attribute-type (file-attributes (file-truename filename)))))
+    (and (not (stringp f)) f)))
 
 (defun excursion-directory-files (directory &optional full-name match-regexp nosort count)
   "Excursion's directory-files."
@@ -510,7 +518,7 @@ non-symlinked lock files yet."
 
 (defun excursion-file-equal-p (file1 file2)
   "Excursion's file-equal-p."
-  (when (excursion--remote-equal-p file1 file2)
+  (when (excursion--remote-equal-p file1 file2) ; avoid further calls if the remotes are wrong
     (excursion--run-stock-handler #'file-equal-p (list file1 file2))))
 
 (defun excursion-substitute-in-file-name (filename)
@@ -556,7 +564,7 @@ non-symlinked lock files yet."
                         "*excursion*"
                         excursion-host
                         excursion-port)))
-          (process-put process 'host "electron") ; TODO: make this excursion-host
+          (process-put process 'host excursion-host)
           (process-put process 'results nil)
           (setq excursion--data "")
           (set-process-filter process 'excursion--filter)

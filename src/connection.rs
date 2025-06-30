@@ -149,7 +149,7 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
 
     pub async fn send_err(&mut self, e: Error) -> Result<()> {
         let msg = e.to_string();
-        println!("{}", msg);
+        println!("Error: {}", msg);
         self.write_frame(Frame::new_err(e.to_string().as_bytes())).await
     }
 }
