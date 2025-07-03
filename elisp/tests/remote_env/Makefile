@@ -19,7 +19,7 @@ env-cargo-build:
 
 env-up: env-key env-cargo-build
 	BIN_NAME=$(BIN) docker compose up -d --build
-	ssh -fNT -i $(USER)_key -p 2222 -L$(FWD_PORT):localhost:7001 $(USER)@localhost
+	ssh -fNT -i $(USER)_key -p 2222 -L$(FWD_PORT):localhost:7001 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no $(USER)@localhost
 
 env-down:
 	- docker compose exec excursion-remote chown -R $(OWNER) $(MOUNT_PATH) 2>/dev/null || true

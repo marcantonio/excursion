@@ -44,9 +44,8 @@
   (add-to-list 'file-name-handler-alist '("\\`/excursion:" . excursion-file-handler)))
 
 ;; Override endpoint for test runner
-(let ((test-endpoint (getenv "TEST_ENDPOINT")))
-  ;;; XXX
-  (setq test-endpoint "localhost:17001")
+(when-let ((test-endpoint (getenv "TEST_ENDPOINT")))
+  ;;(setq test-endpoint "localhost:17001")
   (setq excursion--prefix "/excursion:")
   (setq excursion--user-home-dir "/home/user1/")
   (when test-endpoint
@@ -134,6 +133,7 @@ list."
    ((eq operation 'vc-registered) (apply #'excursion-vc-registered args))
    ((eq operation 'make-symbolic-link) (apply #'excursion-make-symbolic-link args))
    ((eq operation 'delete-file) (apply #'excursion-delete-file args))
+   ((eq operation 'file-local-copy) (apply #'excursion-file-local-copy args))
    (t
     (let ((inhibit-file-name-handlers
            (cons 'excursion-file-handler
@@ -154,10 +154,11 @@ list."
     (apply operation args)))
 
 (defun excursion-insert-file-contents (filename &optional visit beg end replace)
+  "Excursion's insert-file-contents."
   (let* ((filename (expand-file-name filename))
          (path (cdr (excursion--split-prefix filename)))
-         (request (format "(%s|%s" (length path) path))
-         (contents (excursion--make-request request)))
+         (contents (excursion--make-request
+                    (format "(%s|%s" (length path) path))))
     (insert contents)
     (when visit
       (setq buffer-file-name filename
@@ -431,8 +432,8 @@ list."
                           remote-target
                           remote-linkname))))))
 
-;; TODO: tests
 (defun excursion-lock-file (file)
+  "Excursion's lock-file."
   (catch 'abort-lock
     ;; Bail if we own the lock
     (when (eq (file-locked-p file) t)
@@ -466,7 +467,6 @@ list."
       (let (create-lockfiles signal-hook-function)
         (make-symbolic-link info lockname 'ok-if-already-exists)))))
 
-;; TODO: tests
 (defun excursion-unlock-file (file)
   "Excursion's unlock-file."
   (when-let ((lockfile (make-lock-file-name file)))
@@ -487,7 +487,6 @@ list."
             (equal (string-to-number (match-string 3 lock-info)) (emacs-pid))) ; pid
        (match-string 1 lock-info)))))
 
-;; TODO: tests
 (defun excursion-make-lock-file-name (file)
   "Excursion's make-lock-file-name."
   ;; files.el doesn't seem to check these, but adding here anyway for tramp compat
@@ -500,7 +499,6 @@ list."
 non-symlinked lock files yet."
   (file-symlink-p (make-lock-file-name file)))
 
-;; TODO: tests
 (defun excursion-delete-file (file &optional trash)
   "Excursion's delete-file."
   (let ((file (cdr (excursion--split-prefix (expand-file-name file)))))
@@ -549,6 +547,24 @@ non-symlinked lock files yet."
    (t (time-less-p
        (file-attribute-modification-time (file-attributes filename2))
        (file-attribute-modification-time (file-attributes filename1))))))
+
+;; TODO: tests
+(defun excursion-file-local-copy (filename)
+  "Excursion's file-local-copy."
+  (when (excursion--file-p filename) ; TODO: should actually check if the file is local
+    (let* ((file (cdr (excursion--split-prefix (file-truename filename))))
+           (local-file (excursion--temp-file file)))
+      (condition-case err
+          (progn
+            (let ((contents (excursion--make-request
+                             (format "(%s|%s" (length file) file))))
+              (with-temp-file local-file
+                (insert contents))
+              local-file))
+        (error
+         (when (file-exists-p local-file)
+           (delete-file local-file))
+         (signal (car err) (cdr err)))))))
 
 ;;; Connection
 
@@ -767,15 +783,20 @@ same."
         (setq total (+ total (aref bit-values i)))))))
 
 ;; TODO: tests
+;; See https://www.gnu.org/software/emacs/manual/html_mono/elisp.html#Time-of-Day for details.
 (defun excursion--seconds-to-time (s)
   "Convert seconds in S to a time value and round pico down to a
-multiple of 1000. See https://www.gnu.org/software/emacs/manual/html_mono/elisp.html#Time-of-Day for details."
+multiple of 1000."
   (let* ((time (seconds-to-time s))
          (pico (nth 3 time)))
     (list (nth 0 time)                  ; high
           (nth 1 time)                  ; low
           (nth 2 time)                  ; mico
           (- pico (mod pico 1000)))))   ; pico
+
+(defun excursion--temp-file (filename)
+  "Get a temp file for FILENAME."
+  (make-temp-file "excursion-" nil (file-name-extension filename t)))
 
 ;; (let* ((default-directory "/excursion:electron:~/excursion/"))
 ;;   (find-file "/excursion:electron:~/excursion/Cargo.toml"))

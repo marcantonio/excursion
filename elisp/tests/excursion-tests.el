@@ -48,6 +48,17 @@ Named args:
                               (should (apply ,eq-fn (list actual expected-value)))))))))))
     `(progn ,@tests)))
 
+(defmacro excursion--mock-calls (bindings &rest body)
+  "Override functions while executing BODY. BINDINGS should be a
+list of cons cells in the form of (FUNCTION RESULT). For each
+entry, FUNCTION is a symbol naming a function to mock, and RESULT
+is the value that FUNCTION will return whenever it is called."
+  (let ((pairs (mapcar (lambda (binding)
+                         `((symbol-function ,(car binding))
+                           (lambda (&rest _) ,(cadr binding))))
+                       bindings)))
+    `(cl-letf (,@pairs) ,@body)))
+
 (setq load-prefer-newer t)
 
 (require 'abbreviate-file-name-test)
