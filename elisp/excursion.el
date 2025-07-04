@@ -4,7 +4,6 @@
 ;;; >=29.1 directory-abbrev-apply
 
 ;;; Add initial cache call
-;;; insert-file-contents
 ;;; complete tests
 ;;; quoting
 
@@ -153,12 +152,36 @@ list."
         (inhibit-file-name-operation operation))
     (apply operation args)))
 
+;; TODO: tests
 (defun excursion-insert-file-contents (filename &optional visit beg end replace)
   "Excursion's insert-file-contents."
+  (barf-if-buffer-read-only)
+  (let* ((filename (expand-file-name filename))
+         (local-file (excursion--get-file filename beg end)))
+    (condition-case err
+        (let* (beg end ; unset these before calling insert-file-contents
+                   (result (excursion--run-stock-handler
+                            #'insert-file-contents
+                            (list local-file visit beg end replace))))
+          (when visit
+            (setq buffer-file-name filename
+                  buffer-read-only (not (file-writable-p filename)))
+            (set-visited-file-modtime)
+            (set-buffer-modified-p nil))
+          (delete-file local-file)
+          (cons filename (cdr result)))
+      (error
+       (when (file-exists-p local-file)
+         (delete-file local-file))
+       (signal (car err) (cdr err))))))
+
+(defun excursion-insert-file-contents-no-copy (filename &optional visit beg end replace)
+  "Version of insert-file-contents that doesn't make a tmp file
+copy. For experimentation later..."
   (let* ((filename (expand-file-name filename))
          (path (cdr (excursion--split-prefix filename)))
          (contents (excursion--make-request
-                    (format "(%s|%s" (length path) path))))
+                    (format "<%s|%s" (length path) path))))
     (insert contents)
     (when visit
       (setq buffer-file-name filename
@@ -357,7 +380,7 @@ list."
   (cl-destructuring-bind (prefix . path)
       (excursion--split-prefix (expand-file-name filename) t)
     (concat prefix (excursion--make-request
-                    (format "<%s|%s" (length path) path)))))
+                    (format "=%s|%s" (length path) path)))))
 
 (defun excursion-file-directory-p (filename)
   "Excursion's file-directory-p."
@@ -426,7 +449,7 @@ list."
 			                remote-linkname))))))
         (signal 'file-already-exists linkname))
       (equal "1" (excursion--make-request
-                  (format ">%s;%s|%s%s"
+                  (format "@%s;%s|%s%s"
                           (length remote-target)
                           (length remote-linkname)
                           remote-target
@@ -551,16 +574,29 @@ non-symlinked lock files yet."
 ;; TODO: tests
 (defun excursion-file-local-copy (filename)
   "Excursion's file-local-copy."
-  (when (excursion--file-p filename) ; TODO: should actually check if the file is local
+  (excursion--get-file filename))
+
+(defun excursion--temp-file (filename)
+  "Get a temp file for FILENAME."
+  (make-temp-file "excursion-" nil (file-name-extension filename t)))
+
+;; TODO: tests
+(defun excursion--get-file (filename &optional beg end)
+  "Copy remote FILENAME to a local temp file and return the temp
+file's name. BEG and END are offsets into the remote file."
+  (when (excursion--file-p filename)    ; TODO: should actually check if the file is local
     (let* ((file (cdr (excursion--split-prefix (file-truename filename))))
-           (local-file (excursion--temp-file file)))
+           (local-file (excursion--temp-file file))
+           (beg (if beg (number-to-string beg) "0"))
+           (end (if end (number-to-string end) "0")))
       (condition-case err
-          (progn
-            (let ((contents (excursion--make-request
-                             (format "(%s|%s" (length file) file))))
-              (with-temp-file local-file
-                (insert contents))
-              local-file))
+          (let ((contents (excursion--make-request
+                           (format "<%s;%s;%s|%s%s%s"
+                                   (length file) (length beg) (length end)
+                                   file beg end))))
+            (with-temp-file local-file
+              (insert contents))
+            local-file)
         (error
          (when (file-exists-p local-file)
            (delete-file local-file))
@@ -794,10 +830,6 @@ multiple of 1000."
           (nth 2 time)                  ; mico
           (- pico (mod pico 1000)))))   ; pico
 
-(defun excursion--temp-file (filename)
-  "Get a temp file for FILENAME."
-  (make-temp-file "excursion-" nil (file-name-extension filename t)))
-
 ;; (let* ((default-directory "/excursion:electron:~/excursion/"))
 ;;   (find-file "/excursion:electron:~/excursion/Cargo.toml"))
 
@@ -829,4 +861,16 @@ multiple of 1000."
 ;;   (excursion-open-remote-file "./scripts/nc_test.bash")
 ;;   (excursion-open-remote-directory "/home/mas"))
 ;; (excursion-expand-file-name "/excursion:electron:~/otium")
+
+;; (let* ((filename "../../.bashrc")
+;;        (buffer (generate-new-buffer (file-name-nondirectory filename))))
+;;   (with-current-buffer buffer
+;;     (setq default-directory (concat "/excursion:electron:~/excursion/elisp/"))
+;;     ;;(setq default-directory (concat "~/Code/excursion/elisp/"))
+;;     (insert-file-contents filename))
+;;   (switch-to-buffer buffer))
+
+;; (let ((default-directory "/excursion:electron:~/excursion/"))
+;;   (find-file "/excursion:electron:~/excursion/Cargo.toml"))
+
 (provide 'excursion)

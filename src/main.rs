@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::fs::read_link;
 use std::io;
+use std::io::SeekFrom;
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt as _;
@@ -12,6 +13,7 @@ use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
+use tokio::io::AsyncSeekExt;
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -68,7 +70,7 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
             Canonicalize => handle_canonicalize(&mut connection, &segments[0]).await?,
             DirList => handle_dir_list(&mut connection, &segments).await?,
             ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
-            Open => handle_open(&mut connection, &segments[0]).await?,
+            Read => handle_file_read(&mut connection, &segments).await?,
             Rm => handle_rm(&mut connection, &segments[0]).await?,
             Save => todo!(),
             Stat => handle_stat(&mut connection, &segments[0]).await?,
@@ -116,21 +118,42 @@ async fn handle_dir_list<'a>(
     connection.write_frame(Frame::new(FrameType::Data, entries.join("").as_bytes(), &entry_lens)).await
 }
 
-async fn handle_open<'a>(
-    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
+async fn handle_file_read<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
 ) -> Result<()> {
-    match open_file(filename).await {
+    let [filename, start_str, end_str]: [&str; 3] =
+        params.try_into().map_err(|_| "handle_file_read: bad segment")?;
+
+    let start = start_str.parse::<u64>().map_err(|_| "handle_file_read: invalid start offset")?;
+    let end = end_str.parse::<u64>().map_err(|_| "handle_file_read: invalid end offset")?;
+
+    match read_file(filename, start, end).await {
         Ok(contents) => {
             connection.write_frame(Frame::new(FrameType::Data, contents.as_bytes(), &[contents.len()])).await
         },
-        Err(e) => connection.send_err(e).await,
+        Err(e) => connection.send_err(Box::new(e)).await,
     }
 }
 
-async fn open_file(filename: &str) -> Result<String> {
-    let mut file = File::open(filename).await?;
+async fn read_file<P: AsRef<Path>>(file: P, start: u64, end: u64) -> io::Result<String> {
+    let mut file = File::open(file).await?;
+
+    if start != 0 {
+        file.seek(SeekFrom::Start(start)).await?;
+    }
+
     let mut contents = String::new();
-    file.read_to_string(&mut contents).await?;
+
+    if end != 0 {
+        if end < start {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "`end` must be >= `start`"));
+        }
+        let len = end - start;
+        let mut reader = file.take(len);
+        reader.read_to_string(&mut contents).await?;
+    } else {
+        file.read_to_string(&mut contents).await?;
+    }
     Ok(contents)
 }
 

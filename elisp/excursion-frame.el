@@ -1,14 +1,14 @@
 ;;; -*- lexical-binding: t; -*-
 
 (defconst excursion--frame-types
-  '((?<  . Canonicalize)
+  '((?=  . Canonicalize)
     (?^  . Data)
     (?!  . Err)
-    (?\( . Open)
+    (?<  . Read)
     (?-  . Rm)
     (?&  . Save)
     (?:  . Stat)
-    (?>  . Sym)))
+    (?@  . Sym)))
 
 (cl-defstruct (excursion--frame
                (:constructor excursion--frame-create))

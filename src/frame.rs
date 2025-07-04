@@ -72,7 +72,7 @@ pub enum FrameType {
     DirList,
     Err,
     ExpandFileName,
-    Open,
+    Read,
     Rm,
     Save,
     Stat,
@@ -85,17 +85,17 @@ impl TryFrom<u8> for FrameType {
 
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
-            b'<' => Ok(Self::Canonicalize),
+            b'=' => Ok(Self::Canonicalize),
             b'^' => Ok(Self::Data),
             b'~' => Ok(Self::DirList),
             b'!' => Ok(Self::Err),
             b'*' => Ok(Self::ExpandFileName),
-            b'(' => Ok(Self::Open),
+            b'<' => Ok(Self::Read),
             b'-' => Ok(Self::Rm),
             b'&' => Ok(Self::Save),
             b':' => Ok(Self::Stat),
             b'_' => Ok(Self::Stat2),
-            b'>' => Ok(Self::Symlink),
+            b'@' => Ok(Self::Symlink),
             _ => Err("invalid FrameType"),
         }
     }
@@ -107,17 +107,17 @@ impl Display for FrameType {
             f,
             "{}",
             match self {
-                Self::Canonicalize => '<',
+                Self::Canonicalize => '=',
                 Self::Data => '^',
                 Self::DirList => '~',
                 Self::Err => '!',
                 Self::ExpandFileName => '*',
-                Self::Open => '(',
+                Self::Read => '<',
                 Self::Rm => '-',
                 Self::Save => '&',
                 Self::Stat => ':',
                 Self::Stat2 => '_',
-                Self::Symlink => '>',
+                Self::Symlink => '@',
             }
         )
     }
