@@ -133,6 +133,7 @@ list."
    ((eq operation 'make-symbolic-link) (apply #'excursion-make-symbolic-link args))
    ((eq operation 'delete-file) (apply #'excursion-delete-file args))
    ((eq operation 'file-local-copy) (apply #'excursion-file-local-copy args))
+   ((eq operation 'write-region) (apply #'excursion-write-region args))
    (t
     (let ((inhibit-file-name-handlers
            (cons 'excursion-file-handler
@@ -189,6 +190,94 @@ copy. For experimentation later..."
       (set-visited-file-modtime)
       (set-buffer-modified-p nil))
     (cons filename (length contents))))
+
+;; TODO: handle special handlers
+(defun excursion-write-region (start end filename &optional append visit lockname mustbenew)
+  "Excursion's write-region."
+  (let* ((filename (expand-file-name filename))
+         (path (cdr (excursion--split-prefix filename)))
+         (start (or start (point-min)))
+         (end (or end (point-max)))
+         (excl "0")
+         content lockfile locked?)
+    ;; Handle `lockname'. `visit' could be used for locking too
+    (setq lockfile
+          (file-truename (or lockname
+                             (and (stringp visit) visit)
+                             filename)))
+    ;; Handle `mustbenew'
+    (let ((exists? (or (file-exists-p filename)
+                       (file-symlink-p filename))))
+      (cond
+       ((equal mustbenew 'excl)
+        (setq excl "1")
+        (when exists?
+          (signal 'file-already-exists filename)))
+       ((and mustbenew exists?)
+        (unless (y-or-n-p
+                 (format "File %s already exists; overwrite anyway?" filename))
+          (signal 'file-already-exists filename)))))
+    ;; `start' can be a string to write or an offset
+    (setq content
+          (if (stringp start)
+              start
+            (buffer-substring-no-properties start end)))
+    ;; `append' can be t, an offset, or nil
+    (setq append
+          (cond
+           ((equal append t) "t")
+           ((numberp append) (number-to-string append))
+           (t "0")))
+    ;; Lock and make remote call
+    (unwind-protect
+        (progn
+          (when (and (file-remote-p lockname)
+                     (not (file-locked-p lockname)))
+            (lock-file lockname)
+            (setq locked? t))
+          (condition-case err
+              (excursion--make-request
+               (format ">%s;%s;%s;1|%s%s%s%s"
+                       (length path) (length content) (length append)
+                       path content append excl))
+            (error
+             (signal (car err) (cdr err)))))
+      ;; Always unlock
+      (when locked? (unlock-file lockname)))
+
+    ;; Handle the rest of `visit'
+    (when visit
+      (when (stringp visit)
+        (setq filename visit))
+      (setq buffer-file-name filename)
+      (set-visited-file-modtime)
+      (set-buffer-modified-p nil)
+      (unless noninteractive
+        (message "Wrote %s" filename)))
+    nil))
+
+;; (let ((default-directory "/excursion:electron:~/excursion/"))
+;;   (find-file "/excursion:electron:~/excursion/Cargo.toml"))
+
+;; (file-exists-p "/excursion:electron:~/boob")
+;; (file-exists-p "~/foo")
+;; (with-temp-buffer
+;;   (insert "oo bar baz qux\n")
+;;   (let ((tmpfile "/excursion:electron:~/boob"
+;;                  ;;(make-temp-file "foo")
+;;                  ))
+;;     (unwind-protect
+;;         (progn
+;;           (write-region nil nil tmpfile nil t nil))
+;;       (when (file-exists-p tmpfile)))))
+
+;; (with-temp-buffer
+;;   (insert "oo bar baz qux\n")
+;;   (let ((tmpfile "~/fooo"))
+;;     (unwind-protect
+;;         (progn
+;;           (write-region nil nil tmpfile nil t nil))
+;;       (when (file-exists-p tmpfile)))))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-expand-file-name (filename &optional directory)
@@ -440,20 +529,20 @@ copy. For experimentation later..."
                            target))
           (remote-linkname (excursion--parse-filename (expand-file-name linkname) 'file)))
       ;; Handle file already exists
-      (when (and (file-exists-p linkname)
-                 (or (not ok-if-already-exists)
-                     ;; An int here means interactive is ok
-                     (and (numberp ok-if-already-exists)
-		          (not (yes-or-no-p
-			        (format "File %s already exists; make it a link anyway?"
-			                remote-linkname))))))
-        (signal 'file-already-exists linkname))
-      (equal "1" (excursion--make-request
-                  (format "@%s;%s|%s%s"
-                          (length remote-target)
-                          (length remote-linkname)
-                          remote-target
-                          remote-linkname))))))
+      (if (and (or (file-exists-p linkname) (file-symlink-p linkname))
+               (or (not ok-if-already-exists)
+                   ;; An int here means interactive is ok
+                   (and (numberp ok-if-already-exists)
+		        (not (yes-or-no-p
+			      (format "File %s already exists; make it a link anyway?"
+			              remote-linkname))))))
+          (signal 'file-already-exists linkname)
+        (equal "0" (excursion--make-request
+                    (format "@%s;%s|%s%s"
+                            (length remote-target)
+                            (length remote-linkname)
+                            remote-target
+                            remote-linkname)))))))
 
 (defun excursion-lock-file (file)
   "Excursion's lock-file."

@@ -53,13 +53,15 @@
 
             (should (not (file-exists-p linkname))) ; broken links fail
             (should (file-symlink-p linkname))
-            (excursion-make-symbolic-link target linkname) ; broken links not signal here
+            (should-error (excursion-make-symbolic-link target linkname)
+                          :type 'file-already-exists)
             (cl-letf (((symbol-function 'yes-or-no-p)
                        (lambda (&rest _) t))) ; say yes
               (excursion-make-symbolic-link target linkname 1))
             (cl-letf (((symbol-function 'yes-or-no-p)
                        (lambda (&rest _) nil)))                 ; say no
-              (excursion-make-symbolic-link target linkname 1)) ; broken links not signal here
+              (should-error (excursion-make-symbolic-link target linkname 1)
+                            :type 'file-already-exists))
             (excursion-make-symbolic-link target linkname t))
         (delete-file linkname)))))
 

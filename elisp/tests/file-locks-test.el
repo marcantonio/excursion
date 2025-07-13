@@ -24,7 +24,7 @@
   (ert-deftest excursion-lock-file-acquire-lock-test ()
     (with-tidy-lock
      (should (not (file-locked-p file)))
-     (should (excursion-lock-file file))
+     (excursion-lock-file file)
      (should (eq (file-locked-p file) t))))
 
   (ert-deftest excursion-lock-file-already-owned ()
@@ -54,7 +54,7 @@
        (make-symbolic-link info lock 'ok-if-already-exists))
      (excursion--mock-calls
       (('ask-user-about-lock t))
-      (should (excursion-lock-file file))
+      (excursion-lock-file file)
       (should (equal (file-locked-p file) t)))))
 
   (ert-deftest excursion-lock-file-foreign-lock-proceed ()

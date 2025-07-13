@@ -55,6 +55,7 @@
   (excursion--gen-tests
    excursion-file-exists-p
    ((((concat test-root-dir "dir1")) t)
+    (((concat test-root-dir "no")) nil)
     (("/excursion:localhost#17001:/root") t)
     (("/excursion:localhost#17001:not-a-file") nil)))
 

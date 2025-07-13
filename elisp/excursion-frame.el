@@ -6,9 +6,9 @@
     (?!  . Err)
     (?<  . Read)
     (?-  . Rm)
-    (?&  . Save)
     (?:  . Stat)
-    (?@  . Sym)))
+    (?@  . Sym)
+    (?>  . Write)))
 
 (cl-defstruct (excursion--frame
                (:constructor excursion--frame-create))
