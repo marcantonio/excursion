@@ -13,7 +13,9 @@ use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
+use tokio::fs::OpenOptions;
 use tokio::io::AsyncSeekExt;
+use tokio::io::AsyncWriteExt;
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -72,10 +74,10 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
             ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
             Read => handle_file_read(&mut connection, &segments).await?,
             Rm => handle_rm(&mut connection, &segments[0]).await?,
-            Save => todo!(),
             Stat => handle_stat(&mut connection, &segments[0]).await?,
             Stat2 => handle_stat2(&mut connection, &segments).await?,
             Symlink => handle_symlink(&mut connection, &segments).await?,
+            Write => handle_file_write(&mut connection, &segments).await?,
             _ => unimplemented!(),
         }
     }
@@ -155,6 +157,52 @@ async fn read_file<P: AsRef<Path>>(file: P, start: u64, end: u64) -> io::Result<
         file.read_to_string(&mut contents).await?;
     }
     Ok(contents)
+}
+
+async fn handle_file_write<'a>(
+    connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
+) -> Result<()> {
+    let [filename, contents, append, excl]: [&str; 4] =
+        params.try_into().map_err(|_| "handle_file_write: bad segment")?;
+    match write_file(filename, contents, append, excl == "1").await {
+        Ok(_) => connection.write_frame(Frame::new(FrameType::Data, b"1", &[1])).await,
+        Err(e) => connection.send_err(Box::new(e)).await,
+    }
+}
+
+async fn write_file<P: AsRef<Path>>(file: P, contents: &str, append: &str, is_excl: bool) -> io::Result<()> {
+    let mut opts = OpenOptions::new();
+
+    if is_excl {
+        opts.custom_flags(libc::O_EXCL);
+    }
+
+    match append {
+        "t" => {
+            opts.append(true).create(true);
+            let mut file = opts.open(file).await?;
+            file.write_all(contents.as_bytes()).await?;
+        },
+        "0" => {
+            opts.write(true).create(true).truncate(true);
+            let mut file = opts.open(file).await?;
+            file.write_all(contents.as_bytes()).await?;
+        },
+        o => {
+            if let Ok(offset) = o.parse::<u64>() {
+                opts.read(true).write(true).create(true);
+                let mut file = opts.open(file).await?;
+                file.seek(SeekFrom::Start(offset)).await?;
+                file.write_all(contents.as_bytes()).await?;
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "handle_file_write: invalid append value",
+                ));
+            }
+        },
+    };
+    Ok(())
 }
 
 #[derive(Debug)]

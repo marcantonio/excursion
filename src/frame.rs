@@ -74,10 +74,10 @@ pub enum FrameType {
     ExpandFileName,
     Read,
     Rm,
-    Save,
     Stat,
     Stat2,
     Symlink,
+    Write,
 }
 
 impl TryFrom<u8> for FrameType {
@@ -92,10 +92,10 @@ impl TryFrom<u8> for FrameType {
             b'*' => Ok(Self::ExpandFileName),
             b'<' => Ok(Self::Read),
             b'-' => Ok(Self::Rm),
-            b'&' => Ok(Self::Save),
             b':' => Ok(Self::Stat),
             b'_' => Ok(Self::Stat2),
             b'@' => Ok(Self::Symlink),
+            b'>' => Ok(Self::Write),
             _ => Err("invalid FrameType"),
         }
     }
@@ -114,10 +114,10 @@ impl Display for FrameType {
                 Self::ExpandFileName => '*',
                 Self::Read => '<',
                 Self::Rm => '-',
-                Self::Save => '&',
                 Self::Stat => ':',
                 Self::Stat2 => '_',
                 Self::Symlink => '@',
+                Self::Write => '>',
             }
         )
     }

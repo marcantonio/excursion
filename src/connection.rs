@@ -173,7 +173,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert!(frame == Frame::new(FrameType::Write, b"testdata", &[8]));
     }
 
     #[tokio::test]
@@ -205,7 +205,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert!(frame == Frame::new(FrameType::Write, b"testdata", &[8]));
         assert!(connection.buffer.capacity() == 4, "didn't grow");
     }
 
@@ -216,7 +216,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert!(frame == Frame::new(FrameType::Write, b"testdata", &[8]));
     }
 
     #[tokio::test]
@@ -225,7 +225,7 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert!(frame == Frame::new(FrameType::Write, b"testdata", &[8]));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed data or connection reset by peer"));
     }
@@ -236,9 +236,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert!(frame == Frame::new(FrameType::Write, b"testdata", &[8]));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert!(frame == Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert!(frame == Frame::new(FrameType::Write, b"testdata", &[8]));
     }
 
     #[tokio::test]
@@ -261,9 +261,9 @@ mod tests {
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert_eq!(frame, Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert_eq!(frame, Frame::new(FrameType::Write, b"testdata", &[8]));
         let frame = connection.read_frame().await.unwrap().unwrap();
-        assert_eq!(frame, Frame::new(FrameType::Save, b"testdata", &[8]));
+        assert_eq!(frame, Frame::new(FrameType::Write, b"testdata", &[8]));
         let frame = connection.read_frame().await;
         assert!(matches!(frame, Err(e) if e.to_string() == "malformed preamble or connection reset by peer"));
     }
@@ -280,11 +280,11 @@ mod tests {
     #[tokio::test]
     async fn multi_len() {
         let tests = HashMap::from([
-            ("&8;4|testdatamore", Frame::new(FrameType::Save, b"testdatamore", &[8, 4])),
-            ("&8|testdata", Frame::new(FrameType::Save, b"testdata", &[8])),
-            ("&8;4;7|testdatamoreandmore", Frame::new(FrameType::Save, b"testdatamoreandmore", &[8, 4, 7])),
-            ("&8;4|testdatamoreand", Frame::new(FrameType::Save, b"testdatamore", &[8, 4])),
-            ("&7;5|testdatamore", Frame::new(FrameType::Save, b"testdatamore", &[7, 5])), // valid but wrong
+            ("&8;4|testdatamore", Frame::new(FrameType::Write, b"testdatamore", &[8, 4])),
+            ("&8|testdata", Frame::new(FrameType::Write, b"testdata", &[8])),
+            ("&8;4;7|testdatamoreandmore", Frame::new(FrameType::Write, b"testdatamoreandmore", &[8, 4, 7])),
+            ("&8;4|testdatamoreand", Frame::new(FrameType::Write, b"testdatamore", &[8, 4])),
+            ("&7;5|testdatamore", Frame::new(FrameType::Write, b"testdatamore", &[7, 5])), // valid but wrong
         ]);
 
         for (input, test_frame) in tests {
