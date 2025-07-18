@@ -199,12 +199,11 @@ copy. For experimentation later..."
          (start (or start (point-min)))
          (end (or end (point-max)))
          (excl "0")
-         content lockfile locked?)
-    ;; Handle `lockname'. `visit' could be used for locking too
-    (setq lockfile
+         (lockfile
           (file-truename (or lockname
                              (and (stringp visit) visit)
                              filename)))
+         content append-str locked?)
     ;; Handle `mustbenew'
     (let ((exists? (or (file-exists-p filename)
                        (file-symlink-p filename))))
@@ -223,23 +222,23 @@ copy. For experimentation later..."
               start
             (buffer-substring-no-properties start end)))
     ;; `append' can be t, an offset, or nil
-    (setq append
+    (setq append-str ; XXX move up?
           (cond
-           ((equal append t) "t")
            ((numberp append) (number-to-string append))
+           (append "t")
            (t "0")))
     ;; Lock and make remote call
     (unwind-protect
         (progn
-          (when (and (file-remote-p lockname)
-                     (not (file-locked-p lockname)))
-            (lock-file lockname)
+          (when (and (file-remote-p lockfile)
+                     (not (file-locked-p lockfile)))
+            (lock-file lockfile)
             (setq locked? t))
           (condition-case err
               (excursion--make-request
                (format ">%s;%s;%s;1|%s%s%s%s"
-                       (length path) (length content) (length append)
-                       path content append excl))
+                       (length path) (length content) (length append-str)
+                       path content append-str excl))
             (error
              (signal (car err) (cdr err)))))
       ;; Always unlock
@@ -251,9 +250,16 @@ copy. For experimentation later..."
         (setq filename visit))
       (setq buffer-file-name filename)
       (set-visited-file-modtime)
-      (set-buffer-modified-p nil)
-      (unless noninteractive
-        (message "Wrote %s" filename)))
+      (set-buffer-modified-p nil))
+
+    ;; Maybe tell the user
+    (when (and (not noninteractive)
+               (or (eq visit t)
+                   (string-or-null-p visit)))
+      (message (or (and (numberp append) "Updated %s")
+                   (and append "Added to %s")
+                   "Wrote %s")
+               filename))
     nil))
 
 ;; (let ((default-directory "/excursion:electron:~/excursion/"))
@@ -617,6 +623,7 @@ non-symlinked lock files yet."
     (if (and trash delete-by-moving-to-trash)
         (signal 'unimplemented "Excursion doesn't delete to trash")
       (condition-case err
+          ;; XXX
           (equal "0" (excursion--make-request (format "-%s|%s" (length file) file)))
         (error
          (signal 'file-error (error-message-string err)))))))
