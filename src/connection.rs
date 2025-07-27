@@ -88,7 +88,7 @@ impl<SocketRx: AsyncRead + Unpin, SocketTx: AsyncWrite + Unpin> Connection<Socke
                 // The length field can have multiple values separated by ';'
                 let lengths = &self.rx_buffer()[1..i]
                     .split(|n| *n == b';')
-                    .map(|len| atoi::atoi::<usize>(len))
+                    .map(atoi::atoi::<usize>)
                     .collect::<Option<Vec<_>>>()
                     .ok_or("invalid frame sizes")?;
 
@@ -169,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn normal_frame() {
-        let reader = Builder::new().read(b"&8|testdata").build();
+        let reader = Builder::new().read(b">8|testdata").build();
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
@@ -179,16 +179,16 @@ mod tests {
     #[tokio::test]
     async fn bad_frames() {
         let tests = HashMap::from([
-            ("8|testdata", "invalid command"),
-            ("$8|testdata", "invalid command"),
-            ("&a|testdata", "invalid frame sizes"),
-            ("&|testdata", "invalid frame sizes"),
-            ("&8;|testdata", "invalid frame sizes"),
-            ("&8;a|testdata", "invalid frame sizes"),
-            ("&8testdata", "malformed preamble or connection reset by peer"),
-            ("&9|testdata", "malformed data or connection reset by peer"),
-            ("&9;4|testdatamore", "malformed data or connection reset by peer"),
-            ("&8;5|testdatamore", "malformed data or connection reset by peer"),
+            ("8|testdata", "invalid FrameType"),
+            ("$8|testdata", "invalid FrameType"),
+            (">a|testdata", "invalid frame sizes"),
+            (">|testdata", "invalid frame sizes"),
+            (">8;|testdata", "invalid frame sizes"),
+            (">8;a|testdata", "invalid frame sizes"),
+            (">8testdata", "malformed preamble or connection reset by peer"),
+            (">9|testdata", "malformed data or connection reset by peer"),
+            (">9;4|testdatamore", "malformed data or connection reset by peer"),
+            (">8;5|testdatamore", "malformed data or connection reset by peer"),
         ]);
 
         for (input, err) in tests {
@@ -201,7 +201,7 @@ mod tests {
 
     #[tokio::test]
     async fn small_buffer() {
-        let reader = Builder::new().read(b"&8|testdata").build();
+        let reader = Builder::new().read(b">8|testdata").build();
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
         let frame = connection.read_frame().await.unwrap().unwrap();
@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn short_reads() {
         let reader =
-            Builder::new().read(b"&8").read(b"|t").read(b"es").read(b"td").read(b"at").read(b"a").build();
+            Builder::new().read(b">8").read(b"|t").read(b"es").read(b"td").read(b"at").read(b"a").build();
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
@@ -221,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn frame_plus_partial() {
-        let reader = Builder::new().read(b"&8|testdata&8|test").build();
+        let reader = Builder::new().read(b">8|testdata>8|test").build();
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
@@ -232,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn frame_plus_one() {
-        let reader = Builder::new().read(b"&8|testdata&8|testdata").build();
+        let reader = Builder::new().read(b">8|testdata>8|testdata").build();
         let writer = Builder::new().build();
         let mut connection = Connection::new(reader, writer);
         let frame = connection.read_frame().await.unwrap().unwrap();
@@ -244,19 +244,19 @@ mod tests {
     #[tokio::test]
     async fn frame_plus_one_short() {
         let reader = Builder::new()
-            .read(b"&8")
+            .read(b">8")
             .read(b"|t")
             .read(b"es")
             .read(b"td")
             .read(b"at")
             .read(b"a")
-            .read(b"&8")
+            .read(b">8")
             .read(b"|t")
             .read(b"es")
             .read(b"td")
             .read(b"at")
             .read(b"a")
-            .read(b"&8")
+            .read(b">8")
             .build();
         let writer = Builder::new().build();
         let mut connection = Connection::with_buffer_capacity(reader, writer, 4);
@@ -270,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn frame_open() {
-        let reader = Builder::new().read(b"(8|./mm.txt").build();
+        let reader = Builder::new().read(b"<8|./mm.txt").build();
         let writer = Builder::new().write(b"^13|file contents").build();
         let mut connection = Connection::new(reader, writer);
         connection.read_frame().await.unwrap().unwrap();
@@ -280,11 +280,11 @@ mod tests {
     #[tokio::test]
     async fn multi_len() {
         let tests = HashMap::from([
-            ("&8;4|testdatamore", Frame::new(FrameType::Write, b"testdatamore", &[8, 4])),
-            ("&8|testdata", Frame::new(FrameType::Write, b"testdata", &[8])),
-            ("&8;4;7|testdatamoreandmore", Frame::new(FrameType::Write, b"testdatamoreandmore", &[8, 4, 7])),
-            ("&8;4|testdatamoreand", Frame::new(FrameType::Write, b"testdatamore", &[8, 4])),
-            ("&7;5|testdatamore", Frame::new(FrameType::Write, b"testdatamore", &[7, 5])), // valid but wrong
+            (">8;4|testdatamore", Frame::new(FrameType::Write, b"testdatamore", &[8, 4])),
+            (">8|testdata", Frame::new(FrameType::Write, b"testdata", &[8])),
+            (">8;4;7|testdatamoreandmore", Frame::new(FrameType::Write, b"testdatamoreandmore", &[8, 4, 7])),
+            (">8;4|testdatamoreand", Frame::new(FrameType::Write, b"testdatamore", &[8, 4])),
+            (">7;5|testdatamore", Frame::new(FrameType::Write, b"testdatamore", &[7, 5])), // valid but wrong
         ]);
 
         for (input, test_frame) in tests {

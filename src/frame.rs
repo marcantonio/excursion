@@ -51,7 +51,7 @@ impl Frame {
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let lengths = self.segment_lens.iter().map(|&n| n.to_string()).collect::<Vec<_>>().join(";");
-        let data = String::from_utf8(self.payload.iter().cloned().collect::<Vec<_>>()).unwrap();
+        let data = String::from_utf8(self.payload.to_vec()).unwrap();
         write!(f, "{}{}|{}", self.ty, lengths, data)
     }
 }

@@ -5,9 +5,8 @@ use std::fs;
 use std::fs::read_link;
 use std::io;
 use std::io::SeekFrom;
-use std::os::linux::fs::MetadataExt;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Component;
 use std::path::Path;
@@ -69,12 +68,12 @@ async fn process_frames(mut socket: TcpStream) -> Result<()> {
         let segments =
             frame.iter_segments().map(|s| std::str::from_utf8(s).unwrap_or("")).collect::<Vec<_>>();
         match frame.ty {
-            Canonicalize => handle_canonicalize(&mut connection, &segments[0]).await?,
+            Canonicalize => handle_canonicalize(&mut connection, segments[0]).await?,
             DirList => handle_dir_list(&mut connection, &segments).await?,
-            ExpandFileName => handle_expand_file_name(&mut connection, &segments[0]).await?,
+            ExpandFileName => handle_expand_file_name(&mut connection, segments[0]).await?,
             Read => handle_file_read(&mut connection, &segments).await?,
-            Rm => handle_rm(&mut connection, &segments[0]).await?,
-            Stat => handle_stat(&mut connection, &segments[0]).await?,
+            Rm => handle_rm(&mut connection, segments[0]).await?,
+            Stat => handle_stat(&mut connection, segments[0]).await?,
             Stat2 => handle_stat2(&mut connection, &segments).await?,
             Symlink => handle_symlink(&mut connection, &segments).await?,
             Write => handle_file_write(&mut connection, &segments).await?,
@@ -89,7 +88,7 @@ async fn handle_expand_file_name<'a>(
     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, filename: &str,
 ) -> Result<()> {
     assert!(filename.starts_with("~"));
-    let expanded = expanduser::expanduser(&filename).unwrap_or_else(|_| Path::new(filename).to_path_buf());
+    let expanded = expanduser::expanduser(filename).unwrap_or_else(|_| Path::new(filename).to_path_buf());
     let path = expanded.to_string_lossy();
     connection.write_frame(Frame::new(FrameType::Data, path.as_bytes(), &[path.len()])).await
 }
@@ -223,9 +222,9 @@ struct StatResult {
 impl StatResult {
     fn from_metadata(m: fs::Metadata, target: Option<PathBuf>) -> Self {
         Self {
-            nlinks: m.st_nlink(),
-            uid: m.st_uid(),
-            gid: m.st_gid(),
+            nlinks: m.nlink(),
+            uid: m.uid(),
+            gid: m.gid(),
             atime: (m.atime(), m.atime_nsec()),
             mtime: (m.mtime(), m.mtime_nsec()),
             ctime: (m.ctime(), m.ctime_nsec()),
