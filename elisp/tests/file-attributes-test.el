@@ -8,24 +8,30 @@
    ((((concat test-root-dir "dir1"))
      '(t
        2 1001 1001
-       :ignore :ignore :ignore
-       4096 "drwxrwxr-x" nil
+       (26750 58061 0 0)
+       (26750 58061 0 0)
        :ignore
-       (-2 . 64513)))
+       :ignore "drwxrwxr-x" nil
+       :ignore
+       (-2 . 44)))
     (((concat test-root-dir "foo"))
      '(nil
        1 1001 1001
-       :ignore :ignore :ignore
+       (26750 58061 0 0)
+       (26750 58061 0 0)
+       :ignore
        0 "-rw-rw-r--" nil
        :ignore
-       (-2 . 64513)))
+       (-2 . 44)))
     (((concat test-root-dir "/bar"))
      '("foo"
        1 1001 1001
-       :ignore :ignore :ignore
-       3 "lrwxrwxrwx" nil
+       (26752 13389 0 0)
+       (26752 13389 0 0)
        :ignore
-       (-2 . 64513)))
+       3 "lrwxr-xr-x" nil
+       :ignore
+       (-2 . 44)))
     (((concat test-root-dir "/not-a-file")) nil))
    :eq-pred (lambda (actual expected)
               (and (or actual (not expected)) ; make sure actual is defined unless we expect nil

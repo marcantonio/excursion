@@ -41,7 +41,7 @@ Named args:
                         ,@setup
                         (let ,bindings
                           (let ((actual ,(if (and fixture-fn (functionp fixture-fn))
-                                             `(,fixture-fn #',fn ,@args)
+                                             `(funcall ,fixture-fn #',fn ,@args)
                                            `(,fn ,@args)))
                                 (expected-value ,expected))
                             (ert-info ((format "Expected: %S\nActual: %S" expected-value actual))

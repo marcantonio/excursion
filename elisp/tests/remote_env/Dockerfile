@@ -1,3 +1,11 @@
+FROM rust:1.88 AS builder
+WORKDIR /usr/local/excursion
+
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+
+RUN cargo build
+
 FROM ubuntu:24.04
 
 RUN apt-get update && \
@@ -9,7 +17,9 @@ RUN mkdir /var/run/sshd
 
 RUN useradd -m -s /bin/bash user1
 
-COPY entrypoint.sh /entrypoint.sh
+COPY --from=builder /usr/local/excursion/target/debug/excursion /usr/local/bin/excursion
+
+COPY elisp/tests/remote_env/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 22

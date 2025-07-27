@@ -12,9 +12,13 @@ if [[ -f /tmp/${USER}_key.pub ]]; then
   install -o "$USER" -g "$USER" -m 0600 /tmp/${USER}_key.pub "$HOME_DIR/.ssh/authorized_keys"
 fi
 
-# TEST_ROOT="$HOME_DIR/test_root"
-# mkdir $TEST_ROOT
-
 /usr/sbin/sshd -D &
 
-exec su - "$USER" -c "exec $HOME_DIR/$BIN"
+# Changes for file-attributes tests
+touch -d "2025-07-22 01:01:01" "$HOME_DIR/test_root/file-attributes/dir1"
+chmod 775 "$HOME_DIR/test_root/file-attributes/dir1"
+touch -d "2025-07-22 01:01:01" "$HOME_DIR/test_root/file-attributes/foo"
+chmod 664 "$HOME_DIR/test_root/file-attributes/foo"
+touch -h -d "2025-07-23 01:01:01" "$HOME_DIR/test_root/file-attributes/bar"
+
+exec su - "$USER" -c "exec /usr/local/bin/$BIN"
