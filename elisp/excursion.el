@@ -196,14 +196,32 @@ copy. For experimentation later..."
   "Excursion's write-region."
   (let* ((filename (expand-file-name filename))
          (path (cdr (excursion--split-prefix filename)))
-         (start (or start (point-min)))
-         (end (or end (point-max)))
-         (excl "0")
+         (coding-system (excursion--get-coding-system filename))
+         (raw-content ;; `start' can be a string to write, an offset, or nil
+          (cond ((stringp start)
+                 start)
+                ((numberp start)
+                 (buffer-substring-no-properties start end))
+                (t (save-restriction
+                   (widen)
+                   (buffer-substring-no-properties (point-min) (point-max))))))
+         (content (encode-coding-string raw-content coding-system))
          (lockfile
           (file-truename (or lockname
                              (and (stringp visit) visit)
                              filename)))
-         content append-str locked?)
+         (append-str ; translate `append' into a "t" (non-nil), offset (num), or "0" (nil)
+          (cond
+           ((numberp append) (number-to-string append))
+           ((null append) "0")
+           (t "t")))
+         (excl "0")
+         locked?)
+
+    ;; Call pre-write annotation hooks.
+    (when (not (stringp start)) ; XXX: I don't think these make sense for strings?
+      (run-hook-with-args 'write-region-annotate-functions start end))
+
     ;; Handle `mustbenew'
     (let ((exists? (or (file-exists-p filename)
                        (file-symlink-p filename))))
@@ -216,17 +234,7 @@ copy. For experimentation later..."
         (unless (y-or-n-p
                  (format "File %s already exists; overwrite anyway?" filename))
           (signal 'file-already-exists filename)))))
-    ;; `start' can be a string to write or an offset
-    (setq content
-          (if (stringp start)
-              start
-            (buffer-substring-no-properties start end)))
-    ;; `append' can be t, an offset, or nil
-    (setq append-str ; XXX move up?
-          (cond
-           ((numberp append) (number-to-string append))
-           (append "t")
-           (t "0")))
+
     ;; Lock and make remote call
     (unwind-protect
         (progn
@@ -236,16 +244,14 @@ copy. For experimentation later..."
             (setq locked? t))
           (condition-case err
               (excursion--make-request
-               (format ">%s;%s;%s;1|%s%s%s%s"
-                       (length path) (length content) (length append-str)
-                       path content append-str excl))
+               (excursion--serialize-frame ">" path content append-str excl))
             (error
              (signal (car err) (cdr err)))))
       ;; Always unlock
-      (when locked? (unlock-file lockname)))
+      (when locked? (unlock-file lockfile)))
 
     ;; Handle the rest of `visit'
-    (when visit
+    (when (or (eq visit t) (stringp visit))
       (when (stringp visit)
         (setq filename visit))
       (setq buffer-file-name filename)
@@ -254,8 +260,7 @@ copy. For experimentation later..."
 
     ;; Maybe tell the user
     (when (and (not noninteractive)
-               (or (eq visit t)
-                   (string-or-null-p visit)))
+               (or (eq visit t) (stringp visit)))
       (message (or (and (numberp append) "Updated %s")
                    (and append "Added to %s")
                    "Wrote %s")
@@ -284,6 +289,11 @@ copy. For experimentation later..."
 ;;         (progn
 ;;           (write-region nil nil tmpfile nil t nil))
 ;;       (when (file-exists-p tmpfile)))))
+(defun excursion--get-coding-system (filename)
+    (or coding-system-for-write
+        buffer-file-coding-system
+        (let ((entry (assoc filename file-coding-system-alist)))
+          (and entry (cdr entry)))))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-expand-file-name (filename &optional directory)
@@ -786,6 +796,13 @@ if any part is missing or invalid."
                                  (split-string len-str ";")))
                (len (apply '+ seg-lens)))
           (list type len seg-lens (+ delim-pos 1)))))))
+
+(defun excursion--serialize-frame (op &rest args)
+  "Serialize OP with ARGS into a string for request."
+  (let* ((lengths (mapcar (lambda (x) (number-to-string (length x))) args))
+         (header (concat op (mapconcat #'identity lengths ";")))
+         (body (apply #'concat args)))
+    (concat header "|" body)))
 
 (defun excursion--make-request (request)
   "Send REQUEST to process."
