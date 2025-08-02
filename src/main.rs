@@ -161,38 +161,82 @@ async fn read_file<P: AsRef<Path>>(file: P, start: u64, end: u64) -> io::Result<
 async fn handle_file_write<'a>(
     connection: &mut Connection<ReadHalf<'a>, WriteHalf<'a>>, params: &[&str],
 ) -> Result<()> {
-    let [filename, contents, append, excl]: [&str; 4] =
+    let [filename, contents, append, excl, inhibit_fsync]: [&str; 5] =
         params.try_into().map_err(|_| "handle_file_write: bad segment")?;
-    match write_file(filename, contents, append, excl == "1").await {
+
+    match write_file(filename, contents, append, excl == "1", inhibit_fsync == "1").await {
         Ok(_) => connection.write_frame(Frame::new(FrameType::Data, b"1", &[1])).await,
         Err(e) => connection.send_err(Box::new(e)).await,
     }
 }
 
-async fn write_file<P: AsRef<Path>>(file: P, contents: &str, append: &str, is_excl: bool) -> io::Result<()> {
+async fn write_file<P: AsRef<Path>>(
+    file: P, contents: &str, append: &str, is_excl: bool, inhibit_fsync: bool,
+) -> io::Result<()> {
+    let file_path = file.as_ref();
     let mut opts = OpenOptions::new();
 
     if is_excl {
-        opts.custom_flags(libc::O_EXCL);
+        opts.custom_flags(libc::O_EXCL | libc::O_NOFOLLOW);
     }
 
     match append {
         "t" => {
             opts.append(true).create(true);
-            let mut file = opts.open(file).await?;
-            file.write_all(contents.as_bytes()).await?;
+            let mut file = opts
+                .open(file_path)
+                .await
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to open {:?}: {}", file_path, e)))?;
+            file.write_all(contents.as_bytes()).await.map_err(|e| {
+                io::Error::new(e.kind(), format!("failed to append to {:?}: {}", file_path, e))
+            })?;
+
+            if !inhibit_fsync {
+                file.sync_all().await.map_err(|e| {
+                    io::Error::new(e.kind(), format!("failed to fsync {:?}: {}", file_path, e))
+                })?;
+            }
         },
-        "0" => {
+        "-1" => {
             opts.write(true).create(true).truncate(true);
-            let mut file = opts.open(file).await?;
-            file.write_all(contents.as_bytes()).await?;
+            let mut file = opts
+                .open(file_path)
+                .await
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to open {:?}: {}", file_path, e)))?;
+            file.write_all(contents.as_bytes())
+                .await
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to write {:?}: {}", file_path, e)))?;
+
+            if !inhibit_fsync {
+                file.sync_all().await.map_err(|e| {
+                    io::Error::new(e.kind(), format!("failed to fsync {:?}: {}", file_path, e))
+                })?;
+            }
         },
         o => {
             if let Ok(offset) = o.parse::<u64>() {
-                opts.read(true).write(true).create(true);
-                let mut file = opts.open(file).await?;
-                file.seek(SeekFrom::Start(offset)).await?;
-                file.write_all(contents.as_bytes()).await?;
+                opts.write(true).create(true);
+                let mut file = opts.open(file_path).await.map_err(|e| {
+                    io::Error::new(e.kind(), format!("failed to open {:?}: {}", file_path, e))
+                })?;
+                file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+                    io::Error::new(
+                        e.kind(),
+                        format!("failed to seek to {} in {:?}: {}", offset, file_path, e),
+                    )
+                })?;
+                file.write_all(contents.as_bytes()).await.map_err(|e| {
+                    io::Error::new(
+                        e.kind(),
+                        format!("failed to write at {} in {:?}: {}", offset, file_path, e),
+                    )
+                })?;
+
+                if !inhibit_fsync {
+                    file.sync_all().await.map_err(|e| {
+                        io::Error::new(e.kind(), format!("failed to fsync {:?}: {}", file_path, e))
+                    })?;
+                }
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -201,6 +245,7 @@ async fn write_file<P: AsRef<Path>>(file: P, contents: &str, append: &str, is_ex
             }
         },
     };
+
     Ok(())
 }
 

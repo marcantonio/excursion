@@ -194,6 +194,10 @@ copy. For experimentation later..."
 ;; TODO: handle special handlers
 (defun excursion-write-region (start end filename &optional append visit lockname mustbenew)
   "Excursion's write-region."
+  ;; Call pre-write annotation hooks
+  (when (not (stringp start))
+    (run-hook-with-args 'write-region-annotate-functions start end))
+
   (let* ((filename (expand-file-name filename))
          (path (cdr (excursion--split-prefix filename)))
          (coding-system (excursion--get-coding-system filename))
@@ -203,24 +207,23 @@ copy. For experimentation later..."
                 ((numberp start)
                  (buffer-substring-no-properties start end))
                 (t (save-restriction
-                   (widen)
-                   (buffer-substring-no-properties (point-min) (point-max))))))
+                     (widen)
+                     (buffer-substring-no-properties (point-min) (point-max))))))
          (content (encode-coding-string raw-content coding-system))
          (lockfile
-          (file-truename (or lockname
-                             (and (stringp visit) visit)
-                             filename)))
+          (or lockname
+              (and (stringp visit) (expand-file-name visit))
+              filename))
          (append-str ; translate `append' into a "t" (non-nil), offset (num), or "0" (nil)
           (cond
            ((numberp append) (number-to-string append))
-           ((null append) "0")
+           ((null append) "-1")
            (t "t")))
+         (inhibit-fsync (if write-region-inhibit-fsync "1" "0"))
          (excl "0")
          locked?)
 
-    ;; Call pre-write annotation hooks.
-    (when (not (stringp start)) ; XXX: I don't think these make sense for strings?
-      (run-hook-with-args 'write-region-annotate-functions start end))
+    (setq last-coding-system-used coding-system)
 
     ;; Handle `mustbenew'
     (let ((exists? (or (file-exists-p filename)
@@ -244,7 +247,7 @@ copy. For experimentation later..."
             (setq locked? t))
           (condition-case err
               (excursion--make-request
-               (excursion--serialize-frame ">" path content append-str excl))
+               (excursion--serialize-frame ">" path content append-str excl inhibit-fsync))
             (error
              (signal (car err) (cdr err)))))
       ;; Always unlock
@@ -257,6 +260,9 @@ copy. For experimentation later..."
       (setq buffer-file-name filename)
       (set-visited-file-modtime)
       (set-buffer-modified-p nil))
+
+    (when write-region-post-annotation-function
+      (funcall write-region-post-annotation-function))
 
     ;; Maybe tell the user
     (when (and (not noninteractive)
@@ -292,8 +298,8 @@ copy. For experimentation later..."
 (defun excursion--get-coding-system (filename)
     (or coding-system-for-write
         buffer-file-coding-system
-        (let ((entry (assoc filename file-coding-system-alist)))
-          (and entry (cdr entry)))))
+        (cdr (assoc filename file-coding-system-alist))
+        'utf-8))
 
 ;; TODO: handle quoting: https://www.gnu.org/software/emacs/manual/html_node/elisp/File-Name-Expansion.html#index-file_002dname_002dquote
 (defun excursion-expand-file-name (filename &optional directory)
